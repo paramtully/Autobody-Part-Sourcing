@@ -1,12 +1,12 @@
 import type WarehouseLocation from "../warehouseLocation/warehouseLocation";
 import { AvailabilityStatus } from "./availabilityStatus";
 import { DataSourceType } from "./dataSourceType";
+import { Currency } from "./currency";
 
 export default interface InventoryRecord {
     id: string;
 
-    partId: string;
-    vendorId: string;
+    listingId: string;
 
     // Availability
     quantityAvailable?: number;
@@ -14,7 +14,7 @@ export default interface InventoryRecord {
 
     // Pricing
     priceMinor: number; // price in minor units of the currency (e.g. cents for USD)
-    currency: string;
+    currency: Currency;
 
     // Logistics
     warehouseLocation?: WarehouseLocation;
@@ -25,10 +25,5 @@ export default interface InventoryRecord {
     lastVerifiedAt: Date;
     confidenceScore?: number;
 
-    // Ordering
-    orderUrl?: string;
-    supportsInstantOrder?: boolean;
-
     createdAt: Date;
-    updatedAt: Date;
 }
