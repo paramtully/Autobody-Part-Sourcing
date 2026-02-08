@@ -1,6 +1,8 @@
 import type Part from "./Part";
-import { PartCategory } from "./partCategory";
-import type VehicleFitment from "./vehicleFitment";
 import type Dimensions from "./dimensions";
+import { PartIdentifier, PartIdentifierType } from "./partIdentifier";
+import { PartPosition } from "./partPosition";
 
-export { Part, PartCategory, VehicleFitment, Dimensions };
+
+
+export { Part, Dimensions, PartIdentifier, PartIdentifierType, PartPosition };

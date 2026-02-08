@@ -13,7 +13,7 @@ export default interface InventoryRecord {
     availabilityStatus: AvailabilityStatus;
 
     // Pricing
-    priceMinor: number; // price in minor units of the currency (e.g. cents for USD)
+    priceMinor: number; // minimum price in minor units of the currency (e.g. cents for USD)
     currency: Currency;
 
     // Logistics

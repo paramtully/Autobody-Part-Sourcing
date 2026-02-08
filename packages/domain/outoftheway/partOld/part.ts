@@ -1,19 +1,23 @@
+import { PartCategory } from "./partCategory";
+import type VehicleFitment from "./vehicleFitment";
 import type Dimensions from "./dimensions";
-import { PartPosition } from "./partPosition";
 
 export default interface Part {
-    id: string; // UUID
+    id: string; // internal UUID
   
-    // part attributes
+    // Classification
     name: string;
-    category: string;
-    position?: PartPosition;
+    category: PartCategory;
+    position: number;
     description?: string;
-
+  
+    // Fitment
+    compatibleVehicles: Set<VehicleFitment>;
+  
     // Physical properties
     weightGrams?: number;
     dimensionsMillimeters?: Dimensions;
-
+  
     // Lifecycle
     isDiscontinued?: boolean;
   

@@ -6,15 +6,20 @@ export default interface Listing {
     vendorId: string;
     partId: string;
   
-    vendorListingExternalId?: string;
-  
+    // External identifiers for deduplication
+    vendorListingExternalId?: string; // Vendor's own ID for this listing
+    sourceUrl?: string; // Where we found this listing
+    
+    // Listing-level attributes (don't change frequently)
     condition: PartCondition;
+    
+    // Deduplication & change detection
+    contentHash?: string; // Hash of listing attributes for change detection
+    
+    // Lifecycle
+    isActive: boolean; // Soft delete - listing may disappear and reappear
   
-    sourceUrl?: string;
-    contentHash?: string;
-  
-    isActive: boolean;
-  
+    // Ingestion tracking
     createdAt: Date;
     updatedAt: Date;
 }
