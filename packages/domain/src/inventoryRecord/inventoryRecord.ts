@@ -1,29 +1,37 @@
-import type WarehouseLocation from "../warehouseLocation/warehouseLocation";
-import { AvailabilityStatus } from "./availabilityStatus";
-import { DataSourceType } from "./dataSourceType";
-import { Currency } from "./currency";
+import { Currency } from "../listing/currency";
 
 export default interface InventoryRecord {
     id: string;
 
-    listingId: string;
+    vendorId: string;
+    partId: string;
 
-    // Availability
-    quantityAvailable?: number;
-    availabilityStatus: AvailabilityStatus;
+    // Aggregate statistics across all listings for this vendor+part
+    totalListingsCount: number; // How many listings this vendor has for this part
+    activeListingsCount: number; // How many are currently active
 
-    // Pricing
-    priceMinor: number; // minimum price in minor units of the currency (e.g. cents for USD)
-    currency: Currency;
+    // Price range across all listings
+    lowestPriceMinor?: number;
+    highestPriceMinor?: number;
+    currency?: Currency; // Assuming same currency across listings (or most common)
 
-    // Logistics
-    warehouseLocation?: WarehouseLocation;
-    estimatedShipTimeHours?: number;
+    // Total availability
+    totalQuantityAvailable?: number; // Sum across all listings
 
-    // Source + freshness
-    source: DataSourceType;
-    lastVerifiedAt: Date;
-    confidenceScore?: number;
+    // Condition breakdown
+    hasNewOem: boolean;
+    hasNewAftermarket: boolean;
+    hasRecycled: boolean;
+    hasRemanufactured: boolean;
+    hasReconditioned: boolean;
+    hasUnknown: boolean;
 
+    // Last update
+    lastUpdatedAt: Date; // When any listing for this vendor+part was last updated
+
+    // Metadata
     createdAt: Date;
+    updatedAt: Date;
+
+    // Unique: (vendorId, partId)
 }
