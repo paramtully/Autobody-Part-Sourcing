@@ -1,5 +1,6 @@
 export default interface InterchangeMembership {
-    id: string;
+    id: string; // UUID
+
     interchangeId: string;
     partId: string;
   

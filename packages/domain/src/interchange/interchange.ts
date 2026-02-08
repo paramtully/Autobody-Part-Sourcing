@@ -8,12 +8,11 @@ export enum InterchangeSystem {
 }
 
 export interface Interchange {
-    id: string;
 
     // interchange standard or provider
     system: InterchangeSystem;     // ex. Hollander, Opticat, CCC
     code: string;
-    
+
     createdAt: Date;
 }
   

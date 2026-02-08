@@ -24,9 +24,9 @@ export default interface Listing {
     availabilityStatus: AvailabilityStatus;
 
     // Current pricing (updated on each ingestion)
-    priceMinor: number; // Price in minor units (cents for USD)
-    currency: Currency;
+    priceMinorMin: number; // Min Price in minor units (cents for USD)
     priceMinorMax?: number; // If vendor provides price range
+    currency: Currency;
 
     // Current logistics (updated on each ingestion)
     warehouseLocation?: WarehouseLocation;

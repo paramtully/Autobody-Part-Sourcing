@@ -1,4 +1,5 @@
 import type Dimensions from "./dimensions";
+import { PartIdentifier } from "./partIdentifier";
 import { PartPosition } from "./partPosition";
 
 export default interface Part {
@@ -12,7 +13,10 @@ export default interface Part {
 
     // Physical properties
     weightGrams?: number;
-    dimensionsMillimeters?: Dimensions;
+    dimensions?: Dimensions;
+
+    // Interchangeability
+    partIdentifiers: PartIdentifier[];
 
     // Lifecycle
     isDiscontinued?: boolean;

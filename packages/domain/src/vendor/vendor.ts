@@ -16,7 +16,6 @@ export default interface Vendor {
     warehouseLocations: WarehouseLocation[];
 
     // Commercial
-    supportsDropshipping: boolean;
     averageProcessingTimeHours?: number;
 
     // Quality metrics
