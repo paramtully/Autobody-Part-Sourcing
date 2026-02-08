@@ -1,8 +1,8 @@
 import { Currency } from "../listing/currency";
+import { Vendor } from "../vendor";
+import { Part } from "../part";
 
 export default interface InventoryRecord {
-    id: string;
-
     vendorId: string;
     partId: string;
 
@@ -26,12 +26,9 @@ export default interface InventoryRecord {
     hasReconditioned: boolean;
     hasUnknown: boolean;
 
-    // Last update
-    lastUpdatedAt: Date; // When any listing for this vendor+part was last updated
-
     // Metadata
     createdAt: Date;
-    updatedAt: Date;
+    lastUpdatedAt: Date; // When any listing for this vendor+part was last updated
 
     // Unique: (vendorId, partId)
 }

@@ -3,7 +3,6 @@ import { PartIdentifier } from "./partIdentifier";
 import { PartPosition } from "./partPosition";
 
 export default interface Part {
-    id: string; // UUID
   
     // part attributes
     name: string;

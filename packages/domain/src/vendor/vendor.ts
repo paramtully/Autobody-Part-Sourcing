@@ -3,7 +3,6 @@ import { IntegrationType } from "./integrationType";
 import type WarehouseLocation from "../warehouseLocation/warehouseLocation";
 
 export default interface Vendor {
-    id: string;
 
     name: string;
     vendorType: VendorType;

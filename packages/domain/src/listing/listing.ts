@@ -3,12 +3,15 @@ import type WarehouseLocation from "../warehouseLocation/warehouseLocation";
 import { AvailabilityStatus } from "./availabilityStatus";
 import { DataSourceType } from "./dataSourceType";
 import { Currency } from "./currency";
+import { Vendor } from "../vendor";
+import { Part } from "../part";
 
 export default interface Listing {
-    id: string; // UUID (generated)
 
-    vendorId: string;
-    partId: string;
+    id: string; // UUID (generated) -> might be useful for placing orders, otherwise remove
+
+    vendor: Vendor;
+    part: Part;
 
     // External identifiers for deduplication
     // Unique key: (vendorId, vendorListingExternalId) OR (vendorId, sourceUrl)
