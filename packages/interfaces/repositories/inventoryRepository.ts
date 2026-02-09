@@ -1,6 +1,6 @@
-import type InventoryRecord from '@domain/inventoryRecord/inventoryRecord';
-import type Vendor from '@domain/vendor/vendor';
-import type Part from '@domain/part/part';
+import type { InventoryRecord } from '@domain/inventoryRecord/inventoryRecord';
+import type { Vendor } from '@domain/vendor/vendor';
+import type { Part } from '@domain/part/part';
 import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
