@@ -3,8 +3,8 @@ import { Vendor } from "../vendor";
 import { Part } from "../part";
 
 export default interface InventoryRecord {
-    vendorId: string;
-    partId: string;
+    vendor: Vendor;
+    part: Part;
 
     // Aggregate statistics across all listings for this vendor+part
     totalListingsCount: number; // How many listings this vendor has for this part

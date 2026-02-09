@@ -1,60 +1,27 @@
-import { db } from '../../infrastructure/db/src/db';
-import { listings } from '../../infrastructure/db/src/schema';
-import { eq, and, sql } from 'drizzle-orm';
 import type InventoryRecord from '@domain/inventoryRecord/inventoryRecord';
-import { Currency } from '@domain/listing/currency';
+import type Vendor from '@domain/vendor/vendor';
+import type Part from '@domain/part/part';
 
 /**
- * Get aggregated inventory record for a vendor and part.
- * Computes statistics from listings table on-demand.
+ * Repository interface for InventoryRecord domain operations.
+ * Inventory records are computed on-demand from listings, not stored separately.
+ * Does not leak database implementation details.
  */
-export async function getInventoryRecord(
-  vendorId: string,
-  partId: string
-): Promise<InventoryRecord | null> {
-  const result = await db
-    .select({
-      totalListingsCount: sql<number>`COUNT(*)::int`,
-      activeListingsCount: sql<number>`COUNT(*) FILTER (WHERE ${listings.isActive} = true)::int`,
-      lowestPriceMinor: sql<number | null>`MIN(${listings.priceMinorMin})`,
-      highestPriceMinor: sql<number | null>`MAX(${listings.priceMinorMax})`,
-      currency: sql<string | null>`MODE() WITHIN GROUP (ORDER BY ${listings.currency})`,
-      totalQuantityAvailable: sql<number | null>`SUM(${listings.quantityAvailable})`,
-      hasNewOem: sql<boolean>`BOOL_OR(${listings.condition} = 'NEW_OEM')`,
-      hasNewAftermarket: sql<boolean>`BOOL_OR(${listings.condition} = 'NEW_AFTERMARKET')`,
-      hasRecycled: sql<boolean>`BOOL_OR(${listings.condition} = 'RECYCLED')`,
-      hasRemanufactured: sql<boolean>`BOOL_OR(${listings.condition} = 'REMANUFACTURED')`,
-      hasReconditioned: sql<boolean>`BOOL_OR(${listings.condition} = 'RECONDITIONED')`,
-      hasUnknown: sql<boolean>`BOOL_OR(${listings.condition} = 'UNKNOWN')`,
-      lastUpdatedAt: sql<Date>`MAX(${listings.lastVerifiedAt})`,
-    })
-    .from(listings)
-    .where(and(eq(listings.vendorId, vendorId), eq(listings.partId, partId)));
+export interface InventoryRepository {
+  /**
+   * Get aggregated inventory record for a specific vendor and part.
+   * Computes statistics from listings table on-demand.
+   * @param vendor - Vendor domain object
+   * @param part - Part domain object
+   * @returns InventoryRecord if listings exist, null otherwise
+   */
+  getInventoryRecord(vendor: Vendor, part: Part): Promise<InventoryRecord | null>;
 
-  if (result.length === 0 || result[0].totalListingsCount === 0) {
-    return null;
-  }
-
-  const row = result[0];
-
-  return {
-    id: `${vendorId}-${partId}`, // Composite ID for compatibility
-    vendorId,
-    partId,
-    totalListingsCount: row.totalListingsCount,
-    activeListingsCount: row.activeListingsCount,
-    lowestPriceMinor: row.lowestPriceMinor ?? undefined,
-    highestPriceMinor: row.highestPriceMinor ?? undefined,
-    currency: row.currency as Currency | undefined,
-    totalQuantityAvailable: row.totalQuantityAvailable ?? undefined,
-    hasNewOem: row.hasNewOem,
-    hasNewAftermarket: row.hasNewAftermarket,
-    hasRecycled: row.hasRecycled,
-    hasRemanufactured: row.hasRemanufactured,
-    hasReconditioned: row.hasReconditioned,
-    hasUnknown: row.hasUnknown,
-    lastUpdatedAt: row.lastUpdatedAt,
-    createdAt: new Date(), // Not stored, use current time
-    updatedAt: new Date(), // Not stored, use current time
-  };
+  /**
+   * Get all inventory records for a specific part across all vendors.
+   * Computes statistics from listings table on-demand for each vendor.
+   * @param part - Part domain object
+   * @returns Array of InventoryRecords (one per vendor with listings for this part)
+   */
+  getInventoryRecordsByPart(part: Part): Promise<InventoryRecord[]>;
 }

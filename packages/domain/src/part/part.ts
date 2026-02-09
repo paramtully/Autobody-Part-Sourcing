@@ -1,12 +1,13 @@
 import type Dimensions from "./dimensions";
 import { PartIdentifier } from "./partIdentifier";
 import { PartPosition } from "./partPosition";
+import { PartCategory } from "./partCategory";
 
 export default interface Part {
   
     // part attributes
     name: string;
-    category: string;
+    category: PartCategory;
     position?: PartPosition;
     description?: string;
 
