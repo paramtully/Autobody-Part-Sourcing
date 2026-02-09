@@ -26,10 +26,10 @@ export const fitments = pgTable(
         ),
         // Query performance indexes
         makeModelYearIdx: index('fitments_make_model_year_idx').on(
-        table.make,
-        table.model,
-        table.year
-      ),
+            table.make,
+            table.model,
+            table.year
+        ),
     })
 );
 

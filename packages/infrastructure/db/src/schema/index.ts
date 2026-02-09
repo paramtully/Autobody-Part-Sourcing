@@ -9,4 +9,5 @@ export * from './dimensions';
 export * from './fitments';
 export * from './interchanges';
 export * from './listings';
+export * from './listingImages';
 export * from './rawPayloads';

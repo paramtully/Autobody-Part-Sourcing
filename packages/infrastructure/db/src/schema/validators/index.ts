@@ -1,6 +1,7 @@
 // Export all validators
 export * from './rawPayloads.validator';
 export * from './listings.validator';
+export * from './listingImages.validator';
 export * from './parts.validator';
 export * from './dimensions.validator';
 export * from './partIdentifiers.validator';

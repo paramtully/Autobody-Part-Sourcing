@@ -4,5 +4,4 @@
 -- no duplicate fitment combinations
 
 -- Add index for efficient fitment lookups
-CREATE INDEX IF NOT EXISTS fitments_make_model_year_idx 
-  ON fitments (make, model, year);
+CREATE INDEX IF NOT EXISTS fitments_make_model_year_idx ON fitments (make, model, year);

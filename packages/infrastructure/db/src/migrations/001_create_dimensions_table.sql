@@ -1,13 +1,10 @@
 -- Create part_dimensions table
 CREATE TABLE IF NOT EXISTS part_dimensions (
-  part_id UUID PRIMARY KEY,
-  length_mm INTEGER NOT NULL,
-  width_mm INTEGER NOT NULL,
-  height_mm INTEGER NOT NULL,
-  CONSTRAINT part_dimensions_part_id_fkey 
-    FOREIGN KEY (part_id) 
-    REFERENCES parts(id) 
-    ON DELETE CASCADE
+    part_id UUID PRIMARY KEY,
+    length_mm INTEGER NOT NULL,
+    width_mm INTEGER NOT NULL,
+    height_mm INTEGER NOT NULL,
+    CONSTRAINT part_dimensions_part_id_fkey FOREIGN KEY (part_id) REFERENCES parts (id) ON DELETE CASCADE
 );
 
 -- Migrate existing dimensions from JSONB to separate table

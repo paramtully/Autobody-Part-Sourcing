@@ -5,6 +5,7 @@ import { DataSourceType } from "./dataSourceType";
 import { Currency } from "./currency";
 import { Vendor } from "../vendor";
 import { Part } from "../part";
+import type ListingImage from "./listingImage";
 
 export default interface Listing {
 
@@ -21,6 +22,7 @@ export default interface Listing {
     // Listing attributes
     condition: PartCondition;
     description?: string; // Vendor's description of this specific listing
+    images?: ListingImage[]; // Images associated with this listing
 
     // Current availability (updated on each ingestion)
     quantityAvailable?: number;
