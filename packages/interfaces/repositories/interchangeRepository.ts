@@ -1,6 +1,7 @@
 import type { Interchange } from '@domain/interchange/interchange';
 import { InterchangeSystem } from '@domain/interchange/interchange';
 import type Part from '@domain/part/part';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for Interchange domain operations.
@@ -25,23 +26,35 @@ export interface InterchangeRepository {
     /**
      * Find all parts that are interchangeable with a given part.
      * @param partId - Part UUID
-     * @returns Array of interchangeable parts (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of interchangeable parts (empty if none found), or PaginatedResult if pagination provided
      */
-    findInterchangeableParts(partId: string): Promise<Part[]>;
+    findInterchangeableParts(
+        partId: string,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
     /**
      * Find all interchanges for a part (useful for showing compatibility).
      * @param partId - Part UUID
-     * @returns Array of interchanges for the part (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of interchanges for the part (empty if none found), or PaginatedResult if pagination provided
      */
-    findByPart(partId: string): Promise<Interchange[]>;
+    findByPart(
+        partId: string,
+        pagination?: PaginationParams
+    ): Promise<Interchange[] | PaginatedResult<Interchange>>;
 
     /**
      * Find parts by any interchange in a group (for search expansion).
      * @param interchangeId - Interchange UUID
-     * @returns Array of parts in the interchange group (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of parts in the interchange group (empty if none found), or PaginatedResult if pagination provided
      */
-    findPartsByInterchangeGroup(interchangeId: string): Promise<Part[]>;
+    findPartsByInterchangeGroup(
+        interchangeId: string,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
 
     /**

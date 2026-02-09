@@ -1,4 +1,5 @@
 import type InterchangeMembership from '@domain/interchange/interchangeMembership';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for InterchangeMembership domain operations.
@@ -15,16 +16,24 @@ export interface InterchangeMembershipRepository {
     /**
      * Find all interchange memberships for a specific part.
      * @param partId - Part UUID
-     * @returns Array of interchange memberships for the part (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of interchange memberships for the part (empty if none found), or PaginatedResult if pagination provided
      */
-    findByPart(partId: string): Promise<InterchangeMembership[]>;
+    findByPart(
+        partId: string,
+        pagination?: PaginationParams
+    ): Promise<InterchangeMembership[] | PaginatedResult<InterchangeMembership>>;
 
     /**
      * Find all interchange memberships for a specific interchange.
      * @param interchangeId - Interchange UUID
-     * @returns Array of interchange memberships for the interchange (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of interchange memberships for the interchange (empty if none found), or PaginatedResult if pagination provided
      */
-    findByInterchange(interchangeId: string): Promise<InterchangeMembership[]>;
+    findByInterchange(
+        interchangeId: string,
+        pagination?: PaginationParams
+    ): Promise<InterchangeMembership[] | PaginatedResult<InterchangeMembership>>;
 
     /**
      * Upsert an interchange membership (create or update).

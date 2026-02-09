@@ -1,6 +1,7 @@
 import type InventoryRecord from '@domain/inventoryRecord/inventoryRecord';
 import type Vendor from '@domain/vendor/vendor';
 import type Part from '@domain/part/part';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for InventoryRecord domain operations.
@@ -21,7 +22,11 @@ export interface InventoryRepository {
    * Get all inventory records for a specific part across all vendors.
    * Computes statistics from listings table on-demand for each vendor.
    * @param part - Part domain object
-   * @returns Array of InventoryRecords (one per vendor with listings for this part)
+   * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+   * @returns Array of InventoryRecords (one per vendor with listings for this part), or PaginatedResult if pagination provided
    */
-  getInventoryRecordsByPart(part: Part): Promise<InventoryRecord[]>;
+  getInventoryRecordsByPart(
+    part: Part,
+    pagination?: PaginationParams
+  ): Promise<InventoryRecord[] | PaginatedResult<InventoryRecord>>;
 }

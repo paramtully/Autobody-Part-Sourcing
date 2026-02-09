@@ -4,6 +4,7 @@ import type Dimensions from '@domain/part/dimensions';
 import type { Fitment } from '@domain/fitment/fitment';
 import { PartCategory } from '@domain/part/partCategory';
 import { InterchangeSystem } from '@domain/interchange/interchange';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for Part domain operations.
@@ -22,35 +23,56 @@ export interface PartRepository {
      * Multiple parts may match if different manufacturers use the same part number.
      * @param partNumber - OEM part number
      * @param manufacturer - Optional manufacturer filter
-     * @returns Array of matching parts (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching parts (empty if none found), or PaginatedResult if pagination provided
      */
-    findByOemPartNumber(partNumber: string, manufacturer?: string): Promise<Part[]>;
+    findByOemPartNumber(
+        partNumber: string,
+        manufacturer?: string,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
     /**
      * Find parts by aftermarket part number.
      * Multiple parts may match if different manufacturers use the same part number.
      * @param partNumber - Aftermarket part number
      * @param manufacturer - Optional manufacturer filter
-     * @returns Array of matching parts (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching parts (empty if none found), or PaginatedResult if pagination provided
      */
-    findByAftermarketPartNumber(partNumber: string, manufacturer?: string): Promise<Part[]>;
+    findByAftermarketPartNumber(
+        partNumber: string,
+        manufacturer?: string,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
     /**
      * Find parts by interchange code (Hollander, Opticat, etc.).
      * @param system - Interchange system (e.g., HOLLANDER, OPTICAT)
      * @param code - Interchange code
-     * @returns Array of matching parts (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching parts (empty if none found), or PaginatedResult if pagination provided
      */
-    findByInterchangeCode(system: InterchangeSystem, code: string): Promise<Part[]>;
+    findByInterchangeCode(
+        system: InterchangeSystem,
+        code: string,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
     /**
      * Find parts by fitment (vehicle compatibility).
      * Service layer provides Fitment object (VIN decoding handled upstream).
+     * Critical: This operation can match thousands of parts - pagination is strongly recommended.
      * @param fitment - Vehicle fitment details
      * @param category - Optional part category filter (e.g., HEADLIGHT)
-     * @returns Array of matching parts (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching parts (empty if none found), or PaginatedResult if pagination provided
      */
-    findByFitment(fitment: Fitment, category?: PartCategory): Promise<Part[]>;
+    findByFitment(
+        fitment: Fitment,
+        category?: PartCategory,
+        pagination?: PaginationParams
+    ): Promise<Part[] | PaginatedResult<Part>>;
 
     /**
      * Upsert a part (create or update).

@@ -1,4 +1,5 @@
 import type Vendor from '@domain/vendor/vendor';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for Vendor domain operations.
@@ -14,9 +15,10 @@ export interface VendorRepository {
 
     /**
      * Find all vendors.
-     * @returns Array of all vendors
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of all vendors, or PaginatedResult if pagination provided
      */
-    findAll(): Promise<Vendor[]>;
+    findAll(pagination?: PaginationParams): Promise<Vendor[] | PaginatedResult<Vendor>>;
 
     /**
      * Upsert a vendor (create or update).

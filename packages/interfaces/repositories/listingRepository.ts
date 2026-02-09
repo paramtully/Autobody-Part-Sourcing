@@ -5,6 +5,7 @@ import { Currency } from '@domain/listing/currency';
 import type { Fitment } from '@domain/fitment/fitment';
 import { PartCategory } from '@domain/part/partCategory';
 import { InterchangeSystem } from '@domain/interchange/interchange';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Filters for listing search operations.
@@ -42,17 +43,27 @@ export interface ListingRepository {
      * Find listings for a specific part.
      * @param partId - Part UUID
      * @param filters - Optional filters to apply
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
-    findByPart(partId: string, filters?: ListingFilters): Promise<Listing[]>;
+    findByPart(
+        partId: string,
+        filters?: ListingFilters,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Find listings for a specific vendor and part combination.
      * @param vendorId - Vendor UUID
      * @param partId - Part UUID
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
-    findByVendorAndPart(vendorId: string, partId: string): Promise<Listing[]>;
+    findByVendorAndPart(
+        vendorId: string,
+        partId: string,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Find listings by OEM part number.
@@ -60,13 +71,15 @@ export interface ListingRepository {
      * @param partNumber - OEM part number
      * @param manufacturer - Optional manufacturer filter
      * @param filters - Optional listing filters
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
     findByOemPartNumber(
         partNumber: string,
         manufacturer?: string,
-        filters?: ListingFilters
-    ): Promise<Listing[]>;
+        filters?: ListingFilters,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Find listings by aftermarket part number.
@@ -74,13 +87,15 @@ export interface ListingRepository {
      * @param partNumber - Aftermarket part number
      * @param manufacturer - Optional manufacturer filter
      * @param filters - Optional listing filters
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
     findByAftermarketPartNumber(
         partNumber: string,
         manufacturer?: string,
-        filters?: ListingFilters
-    ): Promise<Listing[]>;
+        filters?: ListingFilters,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Find listings by interchange code.
@@ -88,13 +103,15 @@ export interface ListingRepository {
      * @param system - Interchange system (e.g., HOLLANDER, OPTICAT)
      * @param code - Interchange code
      * @param filters - Optional listing filters
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
     findByInterchangeCode(
         system: InterchangeSystem,
         code: string,
-        filters?: ListingFilters
-    ): Promise<Listing[]>;
+        filters?: ListingFilters,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Find listings by fitment (vehicle compatibility).
@@ -103,19 +120,27 @@ export interface ListingRepository {
      * @param fitment - Vehicle fitment details
      * @param category - Optional part category filter (e.g., HEADLIGHT)
      * @param filters - Optional listing filters
-     * @returns Array of matching listings (empty if none found)
+     * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+     * @returns Array of matching listings (empty if none found), or PaginatedResult if pagination provided
      */
     findByFitment(
         fitment: Fitment,
         category?: PartCategory,
-        filters?: ListingFilters
-    ): Promise<Listing[]>;
+        filters?: ListingFilters,
+        pagination?: PaginationParams
+    ): Promise<Listing[] | PaginatedResult<Listing>>;
 
     /**
      * Bulk upsert multiple listings.
      * Idempotent operation - each listing is upserted individually.
+     * Implementation must enforce batch size limits: default 500, maximum 1000.
+     * If batch exceeds maximum, implementation should throw an error.
      * @param listings - Array of listing data (id, createdAt, updatedAt excluded)
+     * @param maxBatchSize - Maximum batch size (default: 500, max: 1000). Implementation should reject if exceeded.
      * @returns Array of created or updated listings with generated ids
      */
-    bulkUpsert(listings: Array<Omit<Listing, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Listing[]>;
+    bulkUpsert(
+        listings: Array<Omit<Listing, 'id' | 'createdAt' | 'updatedAt'>>,
+        maxBatchSize?: number
+    ): Promise<Listing[]>;
 }

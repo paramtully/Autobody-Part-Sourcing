@@ -1,5 +1,6 @@
 import type { Fitment } from '@domain/fitment/fitment';
 import { PartCategory } from '@domain/part/partCategory';
+import type { PaginationParams, PaginatedResult } from './pagination';
 
 /**
  * Repository interface for Fitment domain operations.
@@ -19,18 +20,24 @@ export interface FitmentRepository {
    * Find all fitments for a specific part.
    * Aggregates normalized rows into Fitment objects.
    * @param partId - Part UUID
-   * @returns Array of fitments for the part (empty if none found)
+   * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+   * @returns Array of fitments for the part (empty if none found), or PaginatedResult if pagination provided
    */
-  findByPart(partId: string): Promise<Fitment[]>;
+  findByPart(partId: string, pagination?: PaginationParams): Promise<Fitment[] | PaginatedResult<Fitment>>;
 
   /**
    * Find part IDs that match a given fitment.
    * Service layer provides Fitment object (VIN decoding handled upstream).
    * @param fitment - Vehicle fitment details
    * @param category - Optional part category filter (e.g., HEADLIGHT)
-   * @returns Array of matching part IDs (empty if none found)
+   * @param pagination - Optional pagination parameters. If provided, returns PaginatedResult.
+   * @returns Array of matching part IDs (empty if none found), or PaginatedResult if pagination provided
    */
-  findPartsByFitment(fitment: Fitment, category?: PartCategory): Promise<string[]>;
+  findPartsByFitment(
+    fitment: Fitment,
+    category?: PartCategory,
+    pagination?: PaginationParams
+  ): Promise<string[] | PaginatedResult<string>>;
 
   /**
    * Upsert a fitment (create or update).
