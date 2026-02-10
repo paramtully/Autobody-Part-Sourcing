@@ -7,6 +7,7 @@
  * - Zod schemas for vendor response validation
  * - Change detection utilities
  * - Ingestion pipeline architecture
+ * - Network retry utilities
  */
 
 export * from './inventoryClient';
@@ -16,3 +17,4 @@ export * from './changeDetection/vendorListingState';
 export * from './changeDetection/vendorListingStateRepository';
 export * from './changeDetection/canonicalizer';
 export * from './ingestion/ingestionPipeline';
+export * from './utils/retry';
