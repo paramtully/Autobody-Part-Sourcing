@@ -8,6 +8,7 @@ import {
   computePayloadHash,
   arePayloadsEquivalent,
 } from '../canonicalizer';
+import { VOLATILE_FIELDS, BUSINESS_IDENTITY_FIELD_HINTS } from '../volatileFieldsConfig';
 
 describe('Canonicalizer', () => {
   describe('Deterministic Output', () => {
@@ -80,6 +81,47 @@ describe('Canonicalizer', () => {
       // Null/undefined should be excluded from canonical form
       expect(canonical).not.toContain('optional');
       expect(canonical).not.toContain('alsoOptional');
+    });
+  });
+
+  describe('Purity / non-mutation', () => {
+    it('does not mutate the original payload object', () => {
+      const original = {
+        id: '123',
+        price: 100,
+        nested: {
+          quantity: 5,
+        },
+      };
+
+      const clone = JSON.parse(JSON.stringify(original));
+      canonicalizePayload(original);
+
+      expect(original).toEqual(clone);
+    });
+  });
+
+  describe('Business identity hints vs volatile fields', () => {
+    it('business identity fields are not treated as volatile', () => {
+      for (const field of BUSINESS_IDENTITY_FIELD_HINTS) {
+        expect(VOLATILE_FIELDS.has(field)).toBe(false);
+      }
+    });
+
+    it('business identity fields survive canonicalization', () => {
+      const payload = {
+        id: '123',
+        price: 100,
+        quantityAvailable: 5,
+        isActive: true,
+        condition: 'NEW_OEM',
+      };
+
+      const canonical = canonicalizePayload(payload);
+      expect(canonical).toContain('price');
+      expect(canonical).toContain('quantityAvailable');
+      expect(canonical).toContain('isActive');
+      expect(canonical).toContain('condition');
     });
   });
 

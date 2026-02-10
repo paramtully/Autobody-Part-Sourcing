@@ -1,26 +1,5 @@
 import { createHash } from 'crypto';
-
-/**
- * Volatile fields that should be excluded from canonical payload.
- * These fields change between requests but don't represent actual data changes.
- */
-const VOLATILE_FIELDS = new Set([
-  'scrapeTimestamp',
-  'requestId',
-  'correlationId',
-  'sessionToken',
-  'requestTimestamp',
-  'ingestionTimestamp',
-  'fetchedAt',
-  'scrapedAt',
-  'requestTime',
-  'responseTime',
-  'processingTime',
-  'metadata',
-  'debug',
-  'trace',
-  'span',
-]);
+import { VOLATILE_FIELDS } from './volatileFieldsConfig';
 
 /**
  * Canonicalizes a payload object by:
@@ -34,6 +13,8 @@ const VOLATILE_FIELDS = new Set([
  * @returns Canonical JSON string ready for hashing
  */
 export function canonicalizePayload(payload: unknown): string {
+  // Important: never mutate the original payload. Work on a separate traversal
+  // state (the visited set) and construct a new object graph for the canonical form.
   const canonical = canonicalizeValue(payload, new Set());
   return JSON.stringify(canonical, null, 0); // Compact JSON (no whitespace)
 }
