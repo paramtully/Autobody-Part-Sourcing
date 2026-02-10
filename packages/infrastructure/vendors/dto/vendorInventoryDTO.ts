@@ -31,7 +31,6 @@ export interface VendorInventoryDTO {
   canonicalPayloadJson: string; // Normalized JSON string for hashing - excludes volatile fields
   payloadHash: string; // SHA-256 hash of canonicalPayloadJson
   vendorUpdatedAt?: string; // Raw vendor timestamp if available, ISO string
-  ingestedAt: string; // When we pulled this listing, ISO string
 
   /**
    * Listing Attributes
