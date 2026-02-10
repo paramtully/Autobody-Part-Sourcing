@@ -2,7 +2,7 @@ import { db } from '../db';
 import { warehouseLocations, vendorWarehouseLocations } from '../schema';
 import { eq, and } from 'drizzle-orm';
 import type { WarehouseLocationRepository } from '@interfaces/repositories/warehouseLocationRepository';
-import type { WarehouseLocation } from '@domain/warehouseLocation/warehouseLocation';
+import { WarehouseLocation } from '@domain/warehouseLocation';
 import { toDomainWarehouseLocation, toDbWarehouseLocationInsert } from '../mappers';
 
 export class WarehouseLocationRepositoryImpl implements WarehouseLocationRepository {
