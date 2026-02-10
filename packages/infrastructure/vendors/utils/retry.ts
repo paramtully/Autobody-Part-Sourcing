@@ -9,6 +9,9 @@
  */
 
 import type { RetryableError, NonRetryableError } from '../inventoryClient';
+import type { CircuitBreaker } from './circuitBreaker';
+import type { RequestDeduplicator } from './requestDeduplicator';
+import type { RateLimiter } from './rateLimiter';
 
 /**
  * Configuration options for retry behavior.
@@ -74,6 +77,64 @@ export interface RetryOptions<C = unknown> {
   signal?: AbortSignal;
 
   /**
+   * Whether the operation accepts AbortSignal for cancellation.
+   * If true, operation signature is (signal?: AbortSignal) => Promise<T>
+   * If false or undefined, operation signature is () => Promise<T>
+   * Default: false (backward compatible)
+   * 
+   * When enabled, the retry utility will pass an AbortSignal to the operation
+   * that can be used to cancel in-flight requests when timeouts occur.
+   */
+  operationAcceptsSignal?: boolean;
+
+  /**
+   * Circuit breaker for preventing retry storms when vendor is down.
+   * If provided, circuit breaker state is checked before each attempt.
+   * If circuit is open, operation fails immediately (non-retryable).
+   */
+  circuitBreaker?: CircuitBreaker;
+
+  /**
+   * Request deduplicator for preventing duplicate concurrent requests.
+   * If provided, duplicate requests (same requestId) will share the same result.
+   */
+  requestDeduplicator?: RequestDeduplicator;
+
+  /**
+   * Unique identifier for this request (used with requestDeduplicator).
+   * If not provided and requestDeduplicator is set, a hash of the operation
+   * may be used (implementation dependent).
+   */
+  requestId?: string;
+
+  /**
+   * Rate limiter for coordinating requests across multiple workers.
+   * If provided, rate limiter is checked before each attempt.
+   * If rate limit exceeded, operation waits until allowed.
+   */
+  rateLimiter?: RateLimiter;
+
+  /**
+   * Key for rate limiting (e.g., vendorId).
+   * Required if rateLimiter is provided.
+   */
+  rateLimitKey?: string;
+
+  /**
+   * Result validator function.
+   * If provided, result is validated after operation succeeds.
+   * If validation fails, result is treated as an error and retried (if retryable).
+   * 
+   * @param result - The operation result to validate
+   * @param attemptNumber - Current attempt number (1-indexed)
+   * @param context - Optional context object
+   * @returns Validation result: { valid: true } or { valid: false; error: unknown }
+   */
+  validateResult?: (result: T, attemptNumber: number, context?: C) => 
+    | { valid: true }
+    | { valid: false; error: unknown };
+
+  /**
    * Callback invoked when a retry is about to occur.
    * 
    * @param attemptNumber - The attempt number that will be retried (1-indexed)
@@ -88,9 +149,10 @@ export interface RetryOptions<C = unknown> {
    * 
    * @param attemptNumber - The final attempt number
    * @param error - The final error that caused failure
+   * @param errorHistory - Array of all errors encountered during retry attempts (for debugging)
    * @param context - Optional context object
    */
-  onGiveUp?: (attemptNumber: number, error: unknown, context?: C) => void;
+  onGiveUp?: (attemptNumber: number, error: unknown, errorHistory: unknown[], context?: C) => void;
 
   /**
    * Callback invoked when the operation succeeds.
@@ -100,6 +162,16 @@ export interface RetryOptions<C = unknown> {
    * @param context - Optional context object
    */
   onSuccess?: (attemptNumber: number, durationMs: number, context?: C) => void;
+
+  /**
+   * Callback invoked when a logging callback (onRetry, onGiveUp, onSuccess) throws an error.
+   * This prevents callback errors from masking the original operation error.
+   * 
+   * @param callbackName - Name of the callback that failed ('onRetry', 'onGiveUp', 'onSuccess')
+   * @param error - The error thrown by the callback
+   * @param context - Optional context object
+   */
+  onCallbackError?: (callbackName: string, error: unknown, context?: C) => void;
 
   /**
    * Optional context object passed to callbacks and shouldRetry function.
@@ -313,8 +385,9 @@ export function parseRetryAfter(
     if (!Number.isNaN(date.getTime())) {
       const now = Date.now();
       const delayMs = date.getTime() - now;
-      if (delayMs < 0) {
-        // Date is in the past, return null
+      // Explicit check for negative or zero delays
+      if (delayMs <= 0) {
+        // Date is in the past or same time, return null
         return null;
       }
       return Math.min(delayMs, maxDelay);
@@ -565,24 +638,47 @@ function delay(delayMs: number, signal?: AbortSignal): Promise<void> {
 /**
  * Retries an async operation with exponential backoff and full jitter.
  * 
+ * **IMPORTANT: Idempotency Requirement**
+ * 
+ * The operation being retried MUST be idempotent. This means:
+ * - Executing the operation multiple times produces the same result
+ * - No side effects occur on repeated execution
+ * - Safe to retry after network failures, timeouts, or errors
+ * 
+ * Examples of idempotent operations:
+ * - GET requests (read-only)
+ * - Idempotent POST/PUT with idempotency keys
+ * - Database upserts with conflict resolution
+ * 
+ * Examples of NON-idempotent operations (DO NOT retry):
+ * - POST requests that create new resources without idempotency keys
+ * - Operations that increment counters
+ * - Operations that send emails/notifications
+ * 
  * Features:
  * - Exponential backoff with full jitter
  * - Retry-After header support (429 responses)
- * - Per-attempt timeout support
+ * - Per-attempt timeout support with proper cancellation
  * - Max total duration support
  * - AbortSignal cancellation
  * - Structured logging hooks
  * - Context-aware error classification
+ * - Circuit breaker integration (optional)
+ * - Request deduplication (optional)
+ * - Rate limiting coordination (optional)
+ * - Result validation (optional)
  * 
  * @template T - Return type of the operation
  * @template C - Context type for logging and classification
- * @param operation - The async operation to retry
+ * @param operation - The async operation to retry. Signature depends on `operationAcceptsSignal`:
+ *   - If `operationAcceptsSignal: false` (default): `() => Promise<T>`
+ *   - If `operationAcceptsSignal: true`: `(signal?: AbortSignal) => Promise<T>`
  * @param options - Retry configuration options
  * @returns Promise that resolves with the operation result
  * @throws The last error if all retries are exhausted
  */
 export async function retryAsync<T, C = unknown>(
-  operation: () => Promise<T>,
+  operation: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>),
   options: RetryOptions<C>
 ): Promise<T> {
   const {
@@ -594,6 +690,13 @@ export async function retryAsync<T, C = unknown>(
     timeoutPerAttempt,
     maxTotalDuration,
     signal,
+    operationAcceptsSignal = false,
+    circuitBreaker,
+    requestDeduplicator,
+    requestId,
+    rateLimiter,
+    rateLimitKey,
+    validateResult,
     onRetry,
     onGiveUp,
     onSuccess,
@@ -611,6 +714,24 @@ export async function retryAsync<T, C = unknown>(
   
   const startTime = performance.now();
   let lastError: unknown;
+  const errorHistory: unknown[] = [];
+  
+  // Helper function to safely invoke callbacks
+  const safeInvokeCallback = (
+    callbackName: 'onRetry' | 'onGiveUp' | 'onSuccess',
+    callback: ((...args: unknown[]) => void) | undefined,
+    args: unknown[]
+  ): void => {
+    if (!callback) return;
+    try {
+      callback(...args);
+    } catch (callbackError) {
+      if (options.onCallbackError) {
+        options.onCallbackError(callbackName, callbackError, context);
+      }
+      // Continue execution - don't let callback errors mask original errors
+    }
+  };
   
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // Check if cancelled before starting attempt
@@ -620,50 +741,167 @@ export async function retryAsync<T, C = unknown>(
       throw error;
     }
     
+    // Check circuit breaker before starting attempt
+    if (circuitBreaker?.isOpen()) {
+      const error = new Error(`Circuit breaker is open (state: ${circuitBreaker.getState()})`);
+      error.name = 'CircuitBreakerOpenError';
+      // Circuit breaker errors are non-retryable
+      errorHistory.push(error);
+      safeInvokeCallback('onGiveUp', onGiveUp, [attempt, error, errorHistory, context]);
+      throw error;
+    }
+    
+    // Check rate limiter before starting attempt
+    let rateLimitDelay = 0;
+    if (rateLimiter && rateLimitKey) {
+      try {
+        rateLimitDelay = await rateLimiter.waitIfNeeded(rateLimitKey);
+      } catch (rateLimitError) {
+        // Rate limiter error - treat as non-retryable
+        const error = new Error(`Rate limiter error: ${rateLimitError}`);
+        error.name = 'RateLimiterError';
+        errorHistory.push(error);
+        safeInvokeCallback('onGiveUp', onGiveUp, [attempt, error, errorHistory, context]);
+        throw error;
+      }
+    }
+    
     // Check max total duration before starting attempt
     if (maxTotalDuration !== undefined) {
       const elapsed = performance.now() - startTime;
       if (elapsed >= maxTotalDuration) {
         const error = new Error(`Operation exceeded max total duration of ${maxTotalDuration}ms`);
         error.name = 'TimeoutError';
-        if (onGiveUp) {
-          onGiveUp(attempt, error, context);
-        }
+        safeInvokeCallback('onGiveUp', onGiveUp, [attempt, error, errorHistory, context]);
         throw error;
       }
     }
     
     try {
-      // Execute operation with optional per-attempt timeout
-      let result: T;
-      if (timeoutPerAttempt !== undefined) {
-        // Race between operation and timeout
-        const operationPromise = operation();
-        const timeoutPromise = createTimeoutPromise(timeoutPerAttempt, signal);
+      // Wrap operation with deduplication if provided
+      const executeOperation = async (): Promise<T> => {
+        let result: T;
+        let attemptAbortController: AbortController | undefined;
         
-        result = await Promise.race([operationPromise, timeoutPromise]);
+        if (timeoutPerAttempt !== undefined || operationAcceptsSignal) {
+          // Create AbortController for this attempt (for timeout or operation cancellation)
+          attemptAbortController = new AbortController();
+          
+          // Combine user signal with attempt signal
+          if (signal) {
+            const combinedAbortHandler = () => {
+              attemptAbortController?.abort();
+            };
+            signal.addEventListener('abort', combinedAbortHandler);
+            
+            // Clean up handler when attempt completes
+            const cleanup = () => {
+              signal.removeEventListener('abort', combinedAbortHandler);
+            };
+            
+            // Execute operation
+            const operationPromise = operationAcceptsSignal
+              ? (operation as (signal?: AbortSignal) => Promise<T>)(attemptAbortController.signal)
+              : (operation as () => Promise<T>)();
+            
+            if (timeoutPerAttempt !== undefined) {
+              // Race between operation and timeout
+              const timeoutPromise = createTimeoutPromise(timeoutPerAttempt, attemptAbortController.signal);
+              
+              try {
+                result = await Promise.race([operationPromise, timeoutPromise]);
+                cleanup();
+              } catch (error) {
+                cleanup();
+                // Abort operation if timeout occurred
+                if (error && typeof error === 'object' && (error as Record<string, unknown>).name === 'TimeoutError') {
+                  attemptAbortController.abort();
+                }
+                throw error;
+              }
+            } else {
+              // No timeout, but operation accepts signal
+              try {
+                result = await operationPromise;
+                cleanup();
+              } catch (error) {
+                cleanup();
+                throw error;
+              }
+            }
+          } else {
+            // No user signal, just attempt signal
+            const operationPromise = operationAcceptsSignal
+              ? (operation as (signal?: AbortSignal) => Promise<T>)(attemptAbortController.signal)
+              : (operation as () => Promise<T>)();
+            
+            if (timeoutPerAttempt !== undefined) {
+              const timeoutPromise = createTimeoutPromise(timeoutPerAttempt, attemptAbortController.signal);
+              
+              try {
+                result = await Promise.race([operationPromise, timeoutPromise]);
+              } catch (error) {
+                // Abort operation if timeout occurred
+                if (error && typeof error === 'object' && (error as Record<string, unknown>).name === 'TimeoutError') {
+                  attemptAbortController.abort();
+                }
+                throw error;
+              }
+            } else {
+              result = await operationPromise;
+            }
+          }
+        } else {
+          // No timeout, operation doesn't accept signal
+          result = await (operation as () => Promise<T>)();
+        }
+        
+        return result;
+      };
+      
+      // Use deduplication if provided
+      let result: T;
+      if (requestDeduplicator && requestId) {
+        result = await requestDeduplicator.execute(requestId, executeOperation);
       } else {
-        result = await operation();
+        result = await executeOperation();
+      }
+      
+      // Record operation to rate limiter
+      if (rateLimiter && rateLimitKey) {
+        rateLimiter.recordOperation(rateLimitKey);
+      }
+      
+      // Validate result if validator provided
+      if (validateResult) {
+        const validation = validateResult(result, attempt, context);
+        if (!validation.valid) {
+          // Treat validation error as operation error
+          throw validation.error;
+        }
       }
       
       // Success - call onSuccess hook and return result
-      if (onSuccess) {
-        const duration = performance.now() - startTime;
-        onSuccess(attempt, duration, context);
-      }
+      const duration = performance.now() - startTime;
+      safeInvokeCallback('onSuccess', onSuccess, [attempt, duration, context]);
+      
+      // Record success to circuit breaker
+      circuitBreaker?.recordSuccess();
       
       return result;
     } catch (error) {
       lastError = error;
+      errorHistory.push(error);
       
       // Check if we should retry this error
       const shouldRetryError = shouldRetry(error, attempt, context);
       
+      // Record failure to circuit breaker
+      circuitBreaker?.recordFailure();
+      
       // If this is the last attempt or we shouldn't retry, give up
       if (attempt === maxAttempts || !shouldRetryError) {
-        if (onGiveUp) {
-          onGiveUp(attempt, error, context);
-        }
+        safeInvokeCallback('onGiveUp', onGiveUp, [attempt, error, errorHistory, context]);
         throw error;
       }
       
@@ -682,6 +920,11 @@ export async function retryAsync<T, C = unknown>(
         delayMs = calculateJitteredDelay(attempt, baseDelay, maxDelay, exponentialMultiplier);
       }
       
+      // Add rate limit delay if we waited for rate limiter
+      if (rateLimitDelay > 0) {
+        delayMs = Math.max(delayMs, rateLimitDelay);
+      }
+      
       // Check max total duration before waiting
       if (maxTotalDuration !== undefined) {
         const elapsed = performance.now() - startTime;
@@ -689,9 +932,8 @@ export async function retryAsync<T, C = unknown>(
         if (remaining <= 0) {
           const timeoutError = new Error(`Operation exceeded max total duration of ${maxTotalDuration}ms`);
           timeoutError.name = 'TimeoutError';
-          if (onGiveUp) {
-            onGiveUp(attempt, timeoutError, context);
-          }
+          errorHistory.push(timeoutError);
+          safeInvokeCallback('onGiveUp', onGiveUp, [attempt, timeoutError, errorHistory, context]);
           throw timeoutError;
         }
         // Cap delay at remaining time
@@ -699,26 +941,23 @@ export async function retryAsync<T, C = unknown>(
       }
       
       // Call onRetry hook
-      if (onRetry) {
-        onRetry(attempt, delayMs, error, context);
-      }
+      safeInvokeCallback('onRetry', onRetry, [attempt, delayMs, error, context]);
       
       // Wait before retrying
       try {
         await delay(delayMs, signal);
       } catch (delayError) {
         // Delay was cancelled, throw cancellation error
-        if (onGiveUp) {
-          onGiveUp(attempt, delayError, context);
-        }
+        errorHistory.push(delayError);
+        safeInvokeCallback('onGiveUp', onGiveUp, [attempt, delayError, errorHistory, context]);
         throw delayError;
       }
     }
   }
   
   // This should never be reached, but TypeScript needs it
-  if (onGiveUp && lastError) {
-    onGiveUp(maxAttempts, lastError, context);
+  if (lastError) {
+    safeInvokeCallback('onGiveUp', onGiveUp, [maxAttempts, lastError, errorHistory, context]);
   }
   throw lastError;
 }

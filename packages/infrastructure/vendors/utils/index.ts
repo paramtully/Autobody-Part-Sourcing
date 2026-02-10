@@ -6,3 +6,6 @@
  */
 
 export * from './retry';
+export * from './circuitBreaker';
+export * from './requestDeduplicator';
+export * from './rateLimiter';

@@ -27,6 +27,9 @@ import {
   mapToNonRetryableError,
   type RetryOptions,
 } from '../retry';
+import type { CircuitBreaker } from '../circuitBreaker';
+import type { RequestDeduplicator } from '../requestDeduplicator';
+import type { RateLimiter } from '../rateLimiter';
 
 describe('calculateJitteredDelay', () => {
   it('calculates exponential delay correctly', () => {
@@ -575,7 +578,7 @@ describe('retryAsync', () => {
     await expect(promise).rejects.toEqual(error);
     
     expect(onGiveUp).toHaveBeenCalledTimes(1);
-    expect(onGiveUp).toHaveBeenCalledWith(2, error, context);
+    expect(onGiveUp).toHaveBeenCalledWith(2, error, expect.any(Array), context);
   });
   
   it('calls onSuccess hook with correct parameters', async () => {
@@ -621,6 +624,266 @@ describe('retryAsync', () => {
     
     // Operation should be called with no arguments
     expect(operation).toHaveBeenCalledWith();
+  });
+  
+  it('handles callback errors without masking original error', async () => {
+    const onRetry = jest.fn().mockImplementation(() => {
+      throw new Error('Callback error');
+    });
+    const onCallbackError = jest.fn();
+    let attempt = 0;
+    const operation = jest.fn().mockImplementation(() => {
+      attempt++;
+      if (attempt === 1) {
+        throw { code: 'ECONNRESET' };
+      }
+      return Promise.resolve('success');
+    });
+    
+    const options: RetryOptions = {
+      baseDelay: 100,
+      maxAttempts: 3,
+      shouldRetry: () => true,
+      onRetry,
+      onCallbackError,
+    };
+    
+    const promise = retryAsync(operation, options);
+    jest.advanceTimersByTime(100);
+    
+    const result = await promise;
+    
+    expect(result).toBe('success');
+    expect(onRetry).toHaveBeenCalled();
+    expect(onCallbackError).toHaveBeenCalledWith('onRetry', expect.any(Error), undefined);
+  });
+  
+  it('tracks error history across retry attempts', async () => {
+    const onGiveUp = jest.fn();
+    const error1 = { code: 'ECONNRESET' };
+    const error2 = { code: 'ETIMEDOUT' };
+    let attempt = 0;
+    const operation = jest.fn().mockImplementation(() => {
+      attempt++;
+      if (attempt === 1) {
+        throw error1;
+      }
+      if (attempt === 2) {
+        throw error2;
+      }
+      return Promise.resolve('success');
+    });
+    
+    const options: RetryOptions = {
+      baseDelay: 100,
+      maxAttempts: 2,
+      shouldRetry: () => true,
+      onGiveUp,
+    };
+    
+    const promise = retryAsync(operation, options);
+    jest.advanceTimersByTime(200);
+    
+    await expect(promise).rejects.toEqual(error2);
+    
+    expect(onGiveUp).toHaveBeenCalledWith(2, error2, [error1, error2], undefined);
+  });
+  
+  it('handles AbortSignal in operation when operationAcceptsSignal is true', async () => {
+    const controller = new AbortController();
+    const operation = jest.fn().mockImplementation((signal?: AbortSignal) => {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (signal?.aborted) {
+            reject(new Error('Operation aborted'));
+          } else {
+            resolve('success');
+          }
+        }, 100);
+        
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            reject(new Error('Operation aborted'));
+          });
+        }
+      });
+    });
+    
+    const options: RetryOptions = {
+      operationAcceptsSignal: true,
+      timeoutPerAttempt: 50,
+      maxAttempts: 2,
+      shouldRetry: (error) => {
+        return error && typeof error === 'object' && (error as any).name === 'TimeoutError';
+      },
+    };
+    
+    const promise = retryAsync(operation, options);
+    jest.advanceTimersByTime(50);
+    
+    await expect(promise).rejects.toThrow('Operation timed out');
+    expect(operation).toHaveBeenCalled();
+  });
+  
+  it('integrates with circuit breaker - blocks when open', async () => {
+    const circuitBreaker: CircuitBreaker = {
+      isOpen: jest.fn().mockReturnValue(true),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      getState: jest.fn().mockReturnValue('open'),
+    };
+    
+    const operation = jest.fn().mockResolvedValue('success');
+    
+    await expect(
+      retryAsync(operation, {
+        circuitBreaker,
+        shouldRetry: () => false,
+      })
+    ).rejects.toThrow('Circuit breaker is open');
+    
+    expect(operation).not.toHaveBeenCalled();
+    expect(circuitBreaker.isOpen).toHaveBeenCalled();
+  });
+  
+  it('integrates with circuit breaker - records success and failure', async () => {
+    const circuitBreaker: CircuitBreaker = {
+      isOpen: jest.fn().mockReturnValue(false),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn(),
+      getState: jest.fn().mockReturnValue('closed'),
+    };
+    
+    let attempt = 0;
+    const operation = jest.fn().mockImplementation(() => {
+      attempt++;
+      if (attempt === 1) {
+        throw { code: 'ECONNRESET' };
+      }
+      return Promise.resolve('success');
+    });
+    
+    const options: RetryOptions = {
+      baseDelay: 100,
+      maxAttempts: 3,
+      circuitBreaker,
+      shouldRetry: () => true,
+    };
+    
+    const promise = retryAsync(operation, options);
+    jest.advanceTimersByTime(100);
+    
+    await promise;
+    
+    expect(circuitBreaker.recordFailure).toHaveBeenCalledTimes(1);
+    expect(circuitBreaker.recordSuccess).toHaveBeenCalledTimes(1);
+  });
+  
+  it('integrates with request deduplicator', async () => {
+    let operationCallCount = 0;
+    const operation = jest.fn().mockImplementation(() => {
+      operationCallCount++;
+      return Promise.resolve(`result-${operationCallCount}`);
+    });
+    
+    const deduplicator: RequestDeduplicator = {
+      execute: jest.fn().mockImplementation(async (key, op) => {
+        return op();
+      }),
+      isInProgress: jest.fn().mockReturnValue(false),
+    };
+    
+    const options: RetryOptions = {
+      requestDeduplicator: deduplicator,
+      requestId: 'test-request-1',
+      shouldRetry: () => false,
+    };
+    
+    const result = await retryAsync(operation, options);
+    
+    expect(deduplicator.execute).toHaveBeenCalledWith('test-request-1', expect.any(Function), undefined);
+    expect(result).toBe('result-1');
+  });
+  
+  it('integrates with rate limiter', async () => {
+    const rateLimiter: RateLimiter = {
+      waitIfNeeded: jest.fn().mockResolvedValue(0),
+      recordOperation: jest.fn(),
+    };
+    
+    const operation = jest.fn().mockResolvedValue('success');
+    
+    const options: RetryOptions = {
+      rateLimiter,
+      rateLimitKey: 'vendor-1',
+      shouldRetry: () => false,
+    };
+    
+    await retryAsync(operation, options);
+    
+    expect(rateLimiter.waitIfNeeded).toHaveBeenCalledWith('vendor-1');
+    expect(rateLimiter.recordOperation).toHaveBeenCalledWith('vendor-1');
+  });
+  
+  it('waits for rate limiter when limit exceeded', async () => {
+    const rateLimiter: RateLimiter = {
+      waitIfNeeded: jest.fn().mockResolvedValue(500),
+      recordOperation: jest.fn(),
+    };
+    
+    const operation = jest.fn().mockResolvedValue('success');
+    
+    const options: RetryOptions = {
+      rateLimiter,
+      rateLimitKey: 'vendor-1',
+      shouldRetry: () => false,
+    };
+    
+    await retryAsync(operation, options);
+    
+    expect(rateLimiter.waitIfNeeded).toHaveBeenCalledWith('vendor-1');
+  });
+  
+  it('validates result and retries on validation failure', async () => {
+    let attempt = 0;
+    const operation = jest.fn().mockImplementation(() => {
+      attempt++;
+      return Promise.resolve(attempt === 1 ? null : 'valid-result');
+    });
+    
+    const validateResult = jest.fn().mockImplementation((result) => {
+      if (result === null) {
+        return { valid: false, error: new Error('Invalid result: null') };
+      }
+      return { valid: true };
+    });
+    
+    const options: RetryOptions<string> = {
+      baseDelay: 100,
+      maxAttempts: 3,
+      shouldRetry: () => true,
+      validateResult,
+    };
+    
+    const promise = retryAsync(operation, options);
+    jest.advanceTimersByTime(100);
+    
+    const result = await promise;
+    
+    expect(result).toBe('valid-result');
+    expect(validateResult).toHaveBeenCalledTimes(2);
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+  
+  it('handles Retry-After with zero or negative delays', () => {
+    const maxDelay = 30000;
+    expect(parseRetryAfter('0', maxDelay)).toBe(0);
+    expect(parseRetryAfter('-1', maxDelay)).toBeNull();
+    
+    const pastDate = new Date(Date.now() - 1000);
+    const pastDateString = pastDate.toUTCString();
+    expect(parseRetryAfter(pastDateString, maxDelay)).toBeNull();
   });
   
   it('handles HTTP-date format in Retry-After header', async () => {
