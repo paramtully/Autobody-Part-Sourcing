@@ -8,6 +8,9 @@ export const rawPayloadSchema = z.object({
     payloadHash: z.string().regex(/^[a-f0-9]{64}$/i, 'Must be a valid SHA-256 hash'),
     status: rawPayloadStatusSchema,
     errorMessage: z.string().optional().nullable(),
+    vendorListingExternalId: z.string().min(1).optional().nullable(),
+    ingestionRunId: z.string().uuid().optional().nullable(),
+    retainUntil: z.date().optional().nullable(),
 });
 
 export const createRawPayloadSchema = rawPayloadSchema.omit({ status: true }).extend({

@@ -59,6 +59,13 @@ export const listingSchema = z
             { message: 'confidenceScore must have at most 2 decimal places' }
         ),
         isActive: z.boolean().default(true),
+        // Payload fingerprint for change detection
+        payloadHash: z.string().regex(/^[a-f0-9]{64}$/i, 'Must be a valid SHA-256 hash').optional().nullable(),
+        // Lifecycle fields
+        consecutiveMissCount: z.number().int().nonnegative().default(0),
+        lastSeenAt: z.date().optional(),
+        markedInactiveAt: z.date().optional().nullable(),
+        inactiveReason: z.string().max(100).optional().nullable(),
     })
     .refine(
         (data) => {

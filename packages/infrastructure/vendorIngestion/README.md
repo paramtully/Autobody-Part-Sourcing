@@ -63,7 +63,7 @@ This package provides the infrastructure for ingesting vendor inventory data int
 ### Implementing a Vendor Client
 
 ```typescript
-import { VendorInventoryClient } from '@infrastructure/vendors';
+import { VendorInventoryClient } from '@infrastructure/vendorIngestion';
 
 class MyVendorClient implements VendorInventoryClient {
   async *fetchInventoryStream() {
@@ -87,7 +87,7 @@ class MyVendorClient implements VendorInventoryClient {
 ### Using the DTO
 
 ```typescript
-import { VendorInventoryDTO } from '@infrastructure/vendors';
+import { VendorInventoryDTO } from '@infrastructure/vendorIngestion';
 
 const dto: VendorInventoryDTO = {
   vendorId: 'vendor-123',
@@ -99,7 +99,7 @@ const dto: VendorInventoryDTO = {
 ### Validating Vendor Responses
 
 ```typescript
-import { validateVendorInventoryResponse } from '@infrastructure/vendors';
+import { validateVendorInventoryResponse } from '@infrastructure/vendorIngestion';
 
 const response = await fetchVendorData();
 const validated = validateVendorInventoryResponse(response);
@@ -108,7 +108,7 @@ const validated = validateVendorInventoryResponse(response);
 ### Canonicalizing and Hashing
 
 ```typescript
-import { computePayloadHash, canonicalizePayload } from '@infrastructure/vendors';
+import { computePayloadHash, canonicalizePayload } from '@infrastructure/vendorIngestion';
 
 const canonical = canonicalizePayload(payload);
 const hash = computePayloadHash(payload);

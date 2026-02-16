@@ -9,3 +9,4 @@ export * from './fitments.validator';
 export * from './interchanges.validator';
 export * from './vendors.validator';
 export * from './warehouseLocations.validator';
+export * from './ingestionRuns.validator';

@@ -11,3 +11,4 @@ export * from './interchanges';
 export * from './listings';
 export * from './listingImages';
 export * from './rawPayloads';
+export * from './ingestionRuns';

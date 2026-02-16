@@ -31,6 +31,44 @@ export const listings = pgTable(
         lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }).notNull().defaultNow(),
         confidenceScore: numeric('confidence_score', { precision: 3, scale: 2 }),
         isActive: boolean('is_active').default(true).notNull(),
+
+        /**
+         * Payload fingerprint for change detection (idempotent ingestion).
+         * SHA-256 hash of the canonicalized payload JSON.
+         * The orchestrator compares this to the incoming DTO's payloadHash
+         * to decide: same hash → SKIP, different hash → UPDATE.
+         */
+        payloadHash: text('payload_hash'),
+
+        /**
+         * Lifecycle: how many consecutive ingestion runs missed this listing.
+         * Reset to 0 each time the listing is seen.
+         * When >= missThreshold (default 3), the lifecycle manager marks
+         * the listing as POTENTIALLY_INACTIVE → INACTIVE.
+         */
+        consecutiveMissCount: integer('consecutive_miss_count').notNull().default(0),
+
+        /**
+         * Lifecycle: when this listing was last seen in a vendor response.
+         * Updated on each successful ingestion. Used together with
+         * consecutiveMissCount to detect stale listings.
+         */
+        lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+
+        /**
+         * Lifecycle: when this listing was marked as inactive.
+         * NULL while listing is active. Set by the lifecycle manager
+         * when miss threshold is exceeded or vendor signals deactivation.
+         */
+        markedInactiveAt: timestamp('marked_inactive_at', { withTimezone: true }),
+
+        /**
+         * Lifecycle: reason for deactivation.
+         * e.g., 'MISSED_THRESHOLD', 'VENDOR_DEACTIVATED', 'STALE_DURATION'
+         * NULL while listing is active.
+         */
+        inactiveReason: varchar('inactive_reason', { length: 100 }),
+
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },
@@ -47,6 +85,7 @@ export const listings = pgTable(
         priceMaxCheck: check('price_minor_max_check', `"${table.priceMinorMax.name}" IS NULL OR "${table.priceMinorMax.name}" >= "${table.priceMinorMin.name}"`),
         quantityCheck: check('quantity_available_check', `"${table.quantityAvailable.name}" IS NULL OR "${table.quantityAvailable.name}" >= 0`),
         confidenceCheck: check('confidence_score_check', `"${table.confidenceScore.name}" IS NULL OR ("${table.confidenceScore.name}" >= 0 AND "${table.confidenceScore.name}" <= 1)`),
+        missCountCheck: check('consecutive_miss_count_check', `"${table.consecutiveMissCount.name}" >= 0`),
 
         // Indexes
         partIdIdx: index('listings_part_id_idx').on(table.partId),
@@ -55,5 +94,11 @@ export const listings = pgTable(
         // Aggregation indexes for inventory queries
         vendorPartActiveIdx: index('listings_vendor_part_active_idx').on(table.vendorId, table.partId, table.isActive),
         vendorPartConditionIdx: index('listings_vendor_part_condition_idx').on(table.vendorId, table.partId, table.condition),
+
+        // Payload hash for quick change detection during ingestion
+        payloadHashIdx: index('listings_payload_hash_idx').on(table.payloadHash),
+
+        // Lifecycle: find stale active listings for a vendor (the staleness detection query)
+        vendorActiveLastSeenIdx: index('listings_vendor_active_last_seen_idx').on(table.vendorId, table.isActive, table.lastSeenAt),
     })
 );
