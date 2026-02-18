@@ -45,22 +45,10 @@ import type {
 } from './ingestionRun';
 import { createIngestionRun, mergeChunkStats } from './ingestionRun';
 import type { IngestionChunkResult, RecordProcessingResult } from './ingestionResult';
+import type { IngestionRepositories } from '../ingestionRepository/ingestionRepository';
 
-/**
- * Repository interfaces needed by the orchestrator.
- * Kept minimal -- only what the orchestrator actually calls.
- */
-export interface IngestionRepositories {
-  /** For ingestion run checkpoint/resume. */
-  ingestionRuns: IngestionRunRepository;
-
-  /**
-   * Upsert a listing from a reconciled DTO.
-   * The orchestrator is agnostic to the listing schema --
-   * it passes the CleanedDTO and lets the repository handle mapping.
-   */
-  upsertListing(dto: CleanedDTO, action: 'INSERT' | 'UPDATE'): Promise<{ listingId: string }>;
-}
+// Re-export so existing consumers (tests, etc.) can still import from here.
+export type { IngestionRepositories };
 
 /**
  * All dependencies injected into the orchestrator.
@@ -309,9 +297,9 @@ async function processRecord(
     // Map action to result
     const resultAction: RecordProcessingResult['action'] =
       action === 'INSERT' ? 'INSERTED' :
-      action === 'UPDATE' ? 'UPDATED' :
-      action === 'SKIP' ? 'SKIPPED' :
-      'CONFLICTED';
+        action === 'UPDATE' ? 'UPDATED' :
+          action === 'SKIP' ? 'SKIPPED' :
+            'CONFLICTED';
 
     return {
       vendorListingExternalId: externalId,

@@ -3,6 +3,8 @@ import type { AvailabilityStatus } from '@domain/listing/availabilityStatus';
 import type { Currency } from '@domain/listing/currency';
 import type { DataSourceType } from '@domain/listing/dataSourceType';
 import type { FitmentConstraint } from '@domain/fitment/fitment';
+import type { PartCategory } from '@domain/part/partCategory';
+import type { PartPosition } from '@domain/part/partPosition';
 
 /**
  * Normalized, ingestion-level listing record derived from a single vendor inventory entry.
@@ -107,6 +109,19 @@ export interface VendorInventoryDTO {
   vendorLastUpdatedAt?: string; // Vendor's own last-updated timestamp (string/ISO)
   ingestedAt: string; // When we pulled this listing from vendor, ISO string
   confidenceScore?: number; // 0–1 if you compute one at ingestion-time
+
+  /**
+   * Part Metadata (Optional)
+   * Provides enough information to create a Part when no existing Part
+   * matches the normalizedPartNumberCandidates. Each vendor's DTOMapper
+   * should populate this so the ingestion pipeline can create new parts.
+   */
+  partMetadata?: {
+    name: string;
+    category: PartCategory;
+    position?: PartPosition;
+    description?: string;
+  };
 
   /**
    * Metadata

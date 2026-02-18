@@ -1,5 +1,30 @@
-import { CleanedDTO } from "../cleaning/cleanedDTO";
-import { IngestionRunRepository } from "../ingestion/ingestionRun";
+/**
+ * IngestionRepositories — the facade that the orchestrator calls.
+ *
+ * The interface stays minimal: the orchestrator only cares about
+ * `ingestionRuns` (checkpoint/resume) and `upsertListing` (persist a DTO).
+ *
+ * DefaultIngestionRepositories wires all individual domain repositories
+ * into an IngestionPersistenceService that handles entity resolution,
+ * consistency checking, and ordered upserts.
+ */
+
+import type { CleanedDTO } from '../cleaning/cleanedDTO';
+import type { IngestionRunRepository } from '../ingestion/ingestionRun';
+import type { VendorRepository } from '@interfaces/repositories/vendorRepository';
+import type { PartRepository } from '@interfaces/repositories/partRepository';
+import type { FitmentRepository } from '@interfaces/repositories/fitmentRepository';
+import type { InterchangeRepository } from '@interfaces/repositories/interchangeRepository';
+import type { InterchangeMembershipRepository } from '@interfaces/repositories/interchangeMembershipRepository';
+import type { ListingRepository } from '@interfaces/repositories/listingRepository';
+import type { ListingImageRepository } from '@interfaces/repositories/listingImageRepository';
+import type { WarehouseLocationRepository } from '@interfaces/repositories/warehouseLocationRepository';
+import type { ConsistencyChecker } from './consistencyChecker';
+import { DefaultConsistencyChecker } from './consistencyChecker';
+import { IngestionPersistenceService } from './ingestionPersistenceService';
+import type { UpsertListingResult } from './consistencyResult';
+
+// ─── Interface ───────────────────────────────────────────────────────
 
 /**
  * Repository interfaces needed by the orchestrator.
@@ -8,35 +33,63 @@ import { IngestionRunRepository } from "../ingestion/ingestionRun";
 export interface IngestionRepositories {
     /** For ingestion run checkpoint/resume. */
     ingestionRuns: IngestionRunRepository;
-  
+
     /**
      * Upsert a listing from a reconciled DTO.
-     * The orchestrator is agnostic to the listing schema --
-     * it passes the CleanedDTO and lets the repository handle mapping.
+     * Internally resolves all constituent entities (vendor, part, fitment,
+     * interchange, warehouse location, listing, images), checks consistency,
+     * and persists in FK-dependency order.
+     *
+     * @throws ConsistencyRejectionError if a hard conflict is detected.
      */
-    upsertListing(dto: CleanedDTO, action: 'INSERT' | 'UPDATE'): Promise<{ listingId: string }>;
+    upsertListing(
+        dto: CleanedDTO,
+        action: 'INSERT' | 'UPDATE',
+    ): Promise<UpsertListingResult>;
 }
 
+// ─── Dependencies ────────────────────────────────────────────────────
+
+export interface DefaultIngestionRepositoriesDeps {
+    ingestionRuns: IngestionRunRepository;
+    vendorRepo: VendorRepository;
+    partRepo: PartRepository;
+    fitmentRepo: FitmentRepository;
+    interchangeRepo: InterchangeRepository;
+    interchangeMembershipRepo: InterchangeMembershipRepository;
+    listingRepo: ListingRepository;
+    listingImageRepo: ListingImageRepository;
+    warehouseLocationRepo: WarehouseLocationRepository;
+    consistencyChecker?: ConsistencyChecker;
+}
+
+// ─── Implementation ──────────────────────────────────────────────────
+
 export class DefaultIngestionRepositories implements IngestionRepositories {
+    public readonly ingestionRuns: IngestionRunRepository;
+    private readonly persistenceService: IngestionPersistenceService;
 
-    constructor(private readonly ingestionRuns: IngestionRunRepository) {}
+    constructor(deps: DefaultIngestionRepositoriesDeps) {
+        this.ingestionRuns = deps.ingestionRuns;
 
-
-    async upsertListing(dto: CleanedDTO, action: 'INSERT' | 'UPDATE'): Promise<{ listingId: string }> {
-        return this.ingestionRuns.upsertListing(dto, action);
+        this.persistenceService = new IngestionPersistenceService({
+            vendorRepo: deps.vendorRepo,
+            partRepo: deps.partRepo,
+            fitmentRepo: deps.fitmentRepo,
+            interchangeRepo: deps.interchangeRepo,
+            interchangeMembershipRepo: deps.interchangeMembershipRepo,
+            listingRepo: deps.listingRepo,
+            listingImageRepo: deps.listingImageRepo,
+            warehouseLocationRepo: deps.warehouseLocationRepo,
+            consistencyChecker:
+                deps.consistencyChecker ?? new DefaultConsistencyChecker(),
+        });
     }
 
-    // if part doesnt exist, create it : else check if this part is consistent with the existing part
-
-    // if fitment doesnt exist, create it : else check if this fitment is consistent with the existing fitment
-
-    // if interchange doesnt exist, create it : else check if this interchange is consistent with the existing interchange
-
-    // if warehouse location doesnt exist, create it : else check if this warehouse location is consistent with the existing warehouse location
-
-    // if vendor doesnt exist, create it : else check if this vendor is consistent with the existing vendor
-
-    // if listing doesnt exist, create it : else check if this listing is consistent with the existing listing
-
-    // if listing image doesnt exist, create it : else check if this listing image is consistent with the existing listing image
+    async upsertListing(
+        dto: CleanedDTO,
+        action: 'INSERT' | 'UPDATE',
+    ): Promise<UpsertListingResult> {
+        return this.persistenceService.persistListing(dto, action);
+    }
 }

@@ -46,6 +46,13 @@ export * from './ingestion/ingestionRun';
 export * from './ingestion/ingestionResult';
 export * from './ingestion/ingestionPipeline';
 
+// Ingestion Repository & Persistence Service
+export * from './ingestionRepository/ingestionRepository';
+export * from './ingestionRepository/consistencyResult';
+export * from './ingestionRepository/consistencyChecker';
+export * from './ingestionRepository/entityExtractor';
+export * from './ingestionRepository/ingestionPersistenceService';
+
 // Change Detection
 export * from './changeDetection/vendorListingState';
 export * from './changeDetection/vendorListingStateRepository';
