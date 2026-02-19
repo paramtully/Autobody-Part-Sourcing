@@ -130,3 +130,46 @@ export const rawPayloadStatusEnum = pgEnum('raw_payload_status', [
     'PROCESSED',
     'FAILED',
 ]);
+
+// ────────────────────────────────────────────────────────────────
+// Order system enums
+// ────────────────────────────────────────────────────────────────
+
+export const vendorOrderingModeEnum = pgEnum('vendor_ordering_mode', [
+    'API_SYNC',
+    'API_ASYNC',
+    'EDI',
+    'EMAIL_MANUAL',
+    'NOT_SUPPORTED',
+]);
+
+export const orderStatusEnum = pgEnum('order_status', [
+    'DRAFT',
+    'PENDING_PAYMENT',
+    'PAYMENT_AUTHORIZED',
+    'VENDOR_ORDER_PENDING',
+    'VENDOR_CONFIRMED',
+    'COMPLETED',
+    'CANCELLED',
+    'FAILED',
+    'REFUNDED',
+    'PARTIALLY_REFUNDED',
+]);
+
+export const paymentStatusEnum = pgEnum('payment_status', [
+    'PENDING',
+    'AUTHORIZED',
+    'CAPTURED',
+    'CANCELLED',
+    'FAILED',
+]);
+
+export const paymentProviderEnum = pgEnum('payment_provider', [
+    'STRIPE',
+]);
+
+export const refundStatusEnum = pgEnum('refund_status', [
+    'PENDING',
+    'COMPLETED',
+    'FAILED',
+]);
