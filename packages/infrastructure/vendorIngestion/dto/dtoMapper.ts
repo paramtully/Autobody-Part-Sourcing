@@ -126,6 +126,9 @@ export class DefaultDTOMapper implements DTOMapper {
       // Interchange
       interchange: this.extractInterchange(record),
 
+      // Source vehicle provenance
+      ...this.extractSourceVehicle(record),
+
       // Images
       images: this.extractImages(record),
 
@@ -261,6 +264,22 @@ export class DefaultDTOMapper implements DTOMapper {
     return {
       system: record.interchangeSystem ?? undefined,
       code: record.interchangeCode ?? undefined,
+    };
+  }
+
+  /**
+   * Extract source vehicle provenance from vendor record.
+   * Populated by salvage/recycler vendors that include donor vehicle info.
+   */
+  protected extractSourceVehicle(record: VendorListingRecord): {
+    sourceVehicleVin?: string;
+    sourceMileage?: number;
+    sourceDamageType?: string;
+  } {
+    return {
+      sourceVehicleVin: record.vehicleVin ?? undefined,
+      sourceMileage: record.mileage ?? undefined,
+      sourceDamageType: record.damageType ?? undefined,
     };
   }
 

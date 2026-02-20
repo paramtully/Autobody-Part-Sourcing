@@ -24,6 +24,11 @@ export default interface Listing {
     description?: string; // Vendor's description of this specific listing
     images?: ListingImage[]; // Images associated with this listing
 
+    // Source vehicle provenance (recycled parts only)
+    sourceVehicleVin?: string;  // 17-char NHTSA VIN of donor vehicle
+    sourceMileage?: number;     // Odometer at time of salvage
+    sourceDamageType?: string;  // e.g. 'FRONT', 'REAR', 'FLOOD', 'ROLLOVER'
+
     // Current availability (updated on each ingestion)
     quantityAvailable?: number;
     availabilityStatus: AvailabilityStatus;

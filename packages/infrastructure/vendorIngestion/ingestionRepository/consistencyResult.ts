@@ -22,67 +22,67 @@ export type ConsistencyVerdict = 'CONSISTENT' | 'FIXED' | 'REJECTED';
  * Which domain entity was checked.
  */
 export type ConsistencyEntity =
-  | 'VENDOR'
-  | 'WAREHOUSE_LOCATION'
-  | 'PART'
-  | 'FITMENT'
-  | 'INTERCHANGE'
-  | 'INTERCHANGE_MEMBERSHIP'
-  | 'LISTING'
-  | 'LISTING_IMAGE';
+    | 'VENDOR'
+    | 'WAREHOUSE_LOCATION'
+    | 'PART'
+    | 'FITMENT'
+    | 'INTERCHANGE'
+    | 'INTERCHANGE_MEMBERSHIP'
+    | 'LISTING'
+    | 'LISTING_IMAGE';
 
 /**
  * Result of a consistency check for a single entity.
  */
 export interface ConsistencyCheckResult {
-  /** Which entity was checked. */
-  readonly entity: ConsistencyEntity;
+    /** Which entity was checked. */
+    readonly entity: ConsistencyEntity;
 
-  /** The outcome of the check. */
-  readonly verdict: ConsistencyVerdict;
+    /** The outcome of the check. */
+    readonly verdict: ConsistencyVerdict;
 
-  /** The field that was inconsistent (if any). */
-  readonly field?: string;
+    /** The field that was inconsistent (if any). */
+    readonly field?: string;
 
-  /** The value currently in the database. */
-  readonly existingValue?: unknown;
+    /** The value currently in the database. */
+    readonly existingValue?: unknown;
 
-  /** The value from the incoming DTO. */
-  readonly incomingValue?: unknown;
+    /** The value from the incoming DTO. */
+    readonly incomingValue?: unknown;
 
-  /** Human-readable description of what happened / was fixed / why rejected. */
-  readonly resolution?: string;
+    /** Human-readable description of what happened / was fixed / why rejected. */
+    readonly resolution?: string;
 }
 
 /**
  * Tracks which entities were newly created vs reused from existing DB rows.
  */
 export interface EntitiesCreated {
-  readonly vendor: boolean;
-  readonly warehouseLocation: boolean;
-  readonly part: boolean;
-  readonly fitment: boolean;
-  readonly interchange: boolean;
-  readonly interchangeMembership: boolean;
-  readonly listing: boolean;
-  readonly listingImages: boolean;
+    readonly vendor: boolean;
+    readonly warehouseLocation: boolean;
+    readonly part: boolean;
+    readonly fitment: boolean;
+    readonly interchange: boolean;
+    readonly interchangeMembership: boolean;
+    readonly listing: boolean;
+    readonly listingImages: boolean;
 }
 
 /**
  * Full result of a single `persistListing` call.
  */
 export interface UpsertListingResult {
-  /** The listing UUID (from DB). */
-  readonly listingId: string;
+    /** The listing UUID (from DB). */
+    readonly listingId: string;
 
-  /** The resolved part UUID. */
-  readonly partId: string;
+    /** The resolved part UUID. */
+    readonly partId: string;
 
-  /** All consistency checks that were performed. */
-  readonly consistencyChecks: ConsistencyCheckResult[];
+    /** All consistency checks that were performed. */
+    readonly consistencyChecks: ConsistencyCheckResult[];
 
-  /** Which entities were newly created vs already existed. */
-  readonly entitiesCreated: EntitiesCreated;
+    /** Which entities were newly created vs already existed. */
+    readonly entitiesCreated: EntitiesCreated;
 }
 
 /**
@@ -90,26 +90,26 @@ export interface UpsertListingResult {
  * Carries full details for logging / monitoring.
  */
 export class ConsistencyRejectionError extends Error {
-  public readonly entity: ConsistencyEntity;
-  public readonly field?: string;
-  public readonly existingValue?: unknown;
-  public readonly incomingValue?: unknown;
-  public readonly checks: ConsistencyCheckResult[];
+    public readonly entity: ConsistencyEntity;
+    public readonly field?: string;
+    public readonly existingValue?: unknown;
+    public readonly incomingValue?: unknown;
+    public readonly checks: ConsistencyCheckResult[];
 
-  constructor(
-    failedCheck: ConsistencyCheckResult,
-    allChecks: ConsistencyCheckResult[],
-  ) {
-    super(
-      `Consistency rejection on ${failedCheck.entity}` +
-        (failedCheck.field ? `.${failedCheck.field}` : '') +
-        `: ${failedCheck.resolution ?? 'no resolution provided'}`,
-    );
-    this.name = 'ConsistencyRejectionError';
-    this.entity = failedCheck.entity;
-    this.field = failedCheck.field;
-    this.existingValue = failedCheck.existingValue;
-    this.incomingValue = failedCheck.incomingValue;
-    this.checks = allChecks;
-  }
+    constructor(
+        failedCheck: ConsistencyCheckResult,
+        allChecks: ConsistencyCheckResult[],
+    ) {
+        super(
+            `Consistency rejection on ${failedCheck.entity}` +
+            (failedCheck.field ? `.${failedCheck.field}` : '') +
+            `: ${failedCheck.resolution ?? 'no resolution provided'}`,
+        );
+        this.name = 'ConsistencyRejectionError';
+        this.entity = failedCheck.entity;
+        this.field = failedCheck.field;
+        this.existingValue = failedCheck.existingValue;
+        this.incomingValue = failedCheck.incomingValue;
+        this.checks = allChecks;
+    }
 }

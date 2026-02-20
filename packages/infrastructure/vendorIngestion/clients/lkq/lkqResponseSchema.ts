@@ -2,7 +2,11 @@
  * LKQ-specific Zod schemas for API response validation.
  *
  * Extends the base vendorListingRecordSchema with LKQ-specific fields
- * such as part grading, vehicle VIN, damage type, and yard information.
+ * such as part grading, yard information, and warranty details.
+ *
+ * Note: vehicleVin, mileage, and damageType are defined in the base
+ * vendorListingRecordSchema (inventorySchema.ts) and inherited here
+ * automatically — they are not LKQ-specific.
  *
  * Uses .passthrough() for schema drift tolerance -- LKQ may add fields
  * at any time, and we want to capture them without breaking validation.
@@ -16,10 +20,12 @@ import { vendorListingRecordSchema } from '../../inventorySchema';
  *
  * Extends base schema with fields specific to LKQ's recycled parts inventory:
  * - Part grading (A/B/C quality scale)
- * - Source vehicle information (VIN, mileage, damage type)
  * - Salvage yard identification
  * - Warranty information
  * - Hollander interchange codes
+ *
+ * Source vehicle provenance (vehicleVin, mileage, damageType) is inherited
+ * from the base schema — any vendor can provide these fields.
  */
 export const lkqListingSchema = vendorListingRecordSchema
   .innerType()  // unwrap the .refine() to extend
@@ -41,18 +47,6 @@ export const lkqListingSchema = vendorListingRecordSchema
      * - 'REMAN': Remanufactured to OEM spec
      */
     partGrade: z.string().optional(),
-
-    /** Vehicle mileage at time of salvage. */
-    mileage: z.coerce.number().nonnegative().optional(),
-
-    /** Source vehicle VIN. */
-    vehicleVin: z.string().optional(),
-
-    /**
-     * Type of damage to source vehicle.
-     * Common values: 'FRONT', 'REAR', 'SIDE', 'FLOOD', 'ROLLOVER', 'THEFT'
-     */
-    damageType: z.string().optional(),
 
     /** Hollander interchange number for part cross-referencing. */
     hollanderNumber: z.string().optional(),

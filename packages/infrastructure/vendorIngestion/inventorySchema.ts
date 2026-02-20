@@ -74,6 +74,11 @@ export const vendorListingRecordSchema = z
     constraints: z.array(z.string()).optional().nullable(),
     fitmentText: z.string().optional(),
 
+    // Source vehicle provenance (salvage/recycled parts)
+    vehicleVin: z.string().max(17).optional(),
+    mileage: z.coerce.number().nonnegative().optional().nullable(),
+    damageType: z.string().optional(),
+
     // Interchange
     interchangeSystem: z.string().optional(),
     interchangeCode: z.string().optional(),

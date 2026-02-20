@@ -93,6 +93,15 @@ export interface VendorInventoryDTO {
   };
 
   /**
+   * Source Vehicle Provenance (Optional)
+   * Populated automatically for any vendor that includes vehicleVin/mileage/damageType
+   * in their response. Unique to salvage/recycled parts.
+   */
+  sourceVehicleVin?: string;   // 17-char NHTSA VIN of donor vehicle
+  sourceMileage?: number;      // Odometer at time of salvage
+  sourceDamageType?: string;   // e.g. 'FRONT', 'REAR', 'FLOOD', 'ROLLOVER'
+
+  /**
    * Listing Images (Optional)
    * Structured so it can be mapped into ListingImage and saved via ListingImageRepository.saveListingImages
    */

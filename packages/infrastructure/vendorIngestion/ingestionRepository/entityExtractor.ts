@@ -30,24 +30,24 @@ import type { DataSourceType } from '@domain/listing/dataSourceType';
  * Used to resolve or create a Part in the database.
  */
 export interface ExtractedPartCandidate {
-  /** Part number strings to search against the DB. */
-  readonly partNumberCandidates: string[];
+    /** Part number strings to search against the DB. */
+    readonly partNumberCandidates: string[];
 
-  /** Metadata to create a new Part if none of the candidates match. */
-  readonly metadata: {
-    readonly name: string;
-    readonly category: PartCategory;
-    readonly position?: PartPosition;
-    readonly description?: string;
-  } | null;
+    /** Metadata to create a new Part if none of the candidates match. */
+    readonly metadata: {
+        readonly name: string;
+        readonly category: PartCategory;
+        readonly position?: PartPosition;
+        readonly description?: string;
+    } | null;
 }
 
 /**
  * Interchange info extracted from the DTO.
  */
 export interface ExtractedInterchange {
-  readonly system: string;
-  readonly code: string;
+    readonly system: string;
+    readonly code: string;
 }
 
 // ─── Extraction functions ────────────────────────────────────────────
@@ -57,31 +57,31 @@ export interface ExtractedInterchange {
  * Returns null if the DTO has no warehouse location data.
  */
 export function extractWarehouseLocation(dto: CleanedDTO): WarehouseLocation | null {
-  if (!dto.warehouseLocation) return null;
+    if (!dto.warehouseLocation) return null;
 
-  return {
-    country: dto.warehouseLocation.country,
-    stateOrProvince: dto.warehouseLocation.stateOrProvince,
-    city: dto.warehouseLocation.city,
-    postalCode: dto.warehouseLocation.postalCode,
-  };
+    return {
+        country: dto.warehouseLocation.country,
+        stateOrProvince: dto.warehouseLocation.stateOrProvince,
+        city: dto.warehouseLocation.city,
+        postalCode: dto.warehouseLocation.postalCode,
+    };
 }
 
 /**
  * Extract part resolution candidates and creation metadata from the DTO.
  */
 export function extractPartCandidate(dto: CleanedDTO): ExtractedPartCandidate {
-  return {
-    partNumberCandidates: dto.normalizedPartNumberCandidates,
-    metadata: dto.partMetadata
-      ? {
-          name: dto.partMetadata.name,
-          category: dto.partMetadata.category,
-          position: dto.partMetadata.position,
-          description: dto.partMetadata.description,
-        }
-      : null,
-  };
+    return {
+        partNumberCandidates: dto.normalizedPartNumberCandidates,
+        metadata: dto.partMetadata
+            ? {
+                name: dto.partMetadata.name,
+                category: dto.partMetadata.category,
+                position: dto.partMetadata.position,
+                description: dto.partMetadata.description,
+            }
+            : null,
+    };
 }
 
 /**
@@ -92,18 +92,18 @@ export function extractPartCandidate(dto: CleanedDTO): ExtractedPartCandidate {
  * If any of these are missing in the DTO, we return null (no fitment to upsert).
  */
 export function extractFitment(dto: CleanedDTO): Fitment | null {
-  const f = dto.fitment;
-  if (!f || !f.make || !f.model || f.yearFrom == null) return null;
+    const f = dto.fitment;
+    if (!f || !f.make || !f.model || f.yearFrom == null) return null;
 
-  return {
-    make: f.make,
-    model: f.model,
-    yearFrom: f.yearFrom,
-    yearTo: f.yearTo,
-    trims: f.trims,
-    constraints: f.constraints?.filter(isFitmentConstraint),
-    engine: f.engine,
-  };
+    return {
+        make: f.make,
+        model: f.model,
+        yearFrom: f.yearFrom,
+        yearTo: f.yearTo,
+        trims: f.trims,
+        constraints: f.constraints?.filter(isFitmentConstraint),
+        engine: f.engine,
+    };
 }
 
 /**
@@ -111,13 +111,13 @@ export function extractFitment(dto: CleanedDTO): Fitment | null {
  * Returns null if system or code is missing.
  */
 export function extractInterchange(dto: CleanedDTO): ExtractedInterchange | null {
-  const ic = dto.interchange;
-  if (!ic || !ic.system || !ic.code) return null;
+    const ic = dto.interchange;
+    if (!ic || !ic.system || !ic.code) return null;
 
-  return {
-    system: ic.system,
-    code: ic.code,
-  };
+    return {
+        system: ic.system,
+        code: ic.code,
+    };
 }
 
 /**
@@ -126,33 +126,36 @@ export function extractInterchange(dto: CleanedDTO): ExtractedInterchange | null
  * the shape that ListingRepository.upsert() expects.
  */
 export function extractListingFields(
-  dto: CleanedDTO,
-  vendor: Vendor,
-  part: Part,
-  warehouseLocation?: WarehouseLocation,
+    dto: CleanedDTO,
+    vendor: Vendor,
+    part: Part,
+    warehouseLocation?: WarehouseLocation,
 ): Omit<Listing, 'id' | 'createdAt' | 'updatedAt'> {
-  return {
-    vendor,
-    part,
-    vendorListingExternalId: dto.vendorListingExternalId,
-    sourceUrl: dto.sourceUrl,
-    condition: dto.condition as PartCondition,
-    description: dto.description,
-    quantityAvailable: dto.quantityAvailable,
-    availabilityStatus: dto.availabilityStatus as AvailabilityStatus,
-    priceMinorMin: dto.priceMinorMin,
-    priceMinorMax: dto.priceMinorMax,
-    currency: dto.currency as Currency,
-    warehouseLocation,
-    estimatedShipTimeHours: dto.estimatedShipTimeHours,
-    estimatedDeliveryDate: dto.estimatedDeliveryDate
-      ? new Date(dto.estimatedDeliveryDate)
-      : undefined,
-    source: dto.dataSource as DataSourceType,
-    lastVerifiedAt: new Date(dto.ingestedAt),
-    confidenceScore: dto.confidenceScore,
-    isActive: dto.isActive,
-  };
+    return {
+        vendor,
+        part,
+        vendorListingExternalId: dto.vendorListingExternalId,
+        sourceUrl: dto.sourceUrl,
+        condition: dto.condition as PartCondition,
+        description: dto.description,
+        sourceVehicleVin: dto.sourceVehicleVin,
+        sourceMileage: dto.sourceMileage,
+        sourceDamageType: dto.sourceDamageType,
+        quantityAvailable: dto.quantityAvailable,
+        availabilityStatus: dto.availabilityStatus as AvailabilityStatus,
+        priceMinorMin: dto.priceMinorMin,
+        priceMinorMax: dto.priceMinorMax,
+        currency: dto.currency as Currency,
+        warehouseLocation,
+        estimatedShipTimeHours: dto.estimatedShipTimeHours,
+        estimatedDeliveryDate: dto.estimatedDeliveryDate
+            ? new Date(dto.estimatedDeliveryDate)
+            : undefined,
+        source: dto.dataSource as DataSourceType,
+        lastVerifiedAt: new Date(dto.ingestedAt),
+        confidenceScore: dto.confidenceScore,
+        isActive: dto.isActive,
+    };
 }
 
 /**
@@ -160,13 +163,13 @@ export function extractListingFields(
  * Returns an empty array if no images are present.
  */
 export function extractListingImages(dto: CleanedDTO): ListingImage[] {
-  if (!dto.images || dto.images.length === 0) return [];
+    if (!dto.images || dto.images.length === 0) return [];
 
-  return dto.images.map((img) => ({
-    url: img.url,
-    type: normalizeImageType(img.imageType),
-    source: img.source,
-  }));
+    return dto.images.map((img) => ({
+        url: img.url,
+        type: normalizeImageType(img.imageType),
+        source: img.source,
+    }));
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -176,19 +179,19 @@ export function extractListingImages(dto: CleanedDTO): ListingImage[] {
  * Unknown types fall through as undefined.
  */
 function normalizeImageType(
-  raw?: string,
+    raw?: string,
 ): 'PRIMARY' | 'ANGLE' | 'DAMAGE' | 'STOCK' | undefined {
-  if (!raw) return undefined;
-  const upper = raw.toUpperCase();
-  if (
-    upper === 'PRIMARY' ||
-    upper === 'ANGLE' ||
-    upper === 'DAMAGE' ||
-    upper === 'STOCK'
-  ) {
-    return upper as 'PRIMARY' | 'ANGLE' | 'DAMAGE' | 'STOCK';
-  }
-  return undefined;
+    if (!raw) return undefined;
+    const upper = raw.toUpperCase();
+    if (
+        upper === 'PRIMARY' ||
+        upper === 'ANGLE' ||
+        upper === 'DAMAGE' ||
+        upper === 'STOCK'
+    ) {
+        return upper as 'PRIMARY' | 'ANGLE' | 'DAMAGE' | 'STOCK';
+    }
+    return undefined;
 }
 
 /**
@@ -196,15 +199,15 @@ function normalizeImageType(
  * Filters out vendor-specific string values that aren't in our enum.
  */
 function isFitmentConstraint(value: FitmentConstraint | string): value is FitmentConstraint {
-  // Import-free check: FitmentConstraint values are all UPPER_SNAKE strings
-  // defined in the enum. We compare against the known set.
-  const known = new Set<string>([
-    'WITH_RADAR', 'WITHOUT_RADAR',
-    'WITH_PARKING_SENSORS', 'WITHOUT_PARKING_SENSORS',
-    'WITH_CAMERA', 'WITHOUT_CAMERA',
-    'LED', 'HALOGEN', 'HID', 'ADAPTIVE',
-    'SUNROOF', 'NO_SUNROOF',
-    'AWD', 'FWD', 'RWD',
-  ]);
-  return known.has(value);
+    // Import-free check: FitmentConstraint values are all UPPER_SNAKE strings
+    // defined in the enum. We compare against the known set.
+    const known = new Set<string>([
+        'WITH_RADAR', 'WITHOUT_RADAR',
+        'WITH_PARKING_SENSORS', 'WITHOUT_PARKING_SENSORS',
+        'WITH_CAMERA', 'WITHOUT_CAMERA',
+        'LED', 'HALOGEN', 'HID', 'ADAPTIVE',
+        'SUNROOF', 'NO_SUNROOF',
+        'AWD', 'FWD', 'RWD',
+    ]);
+    return known.has(value);
 }

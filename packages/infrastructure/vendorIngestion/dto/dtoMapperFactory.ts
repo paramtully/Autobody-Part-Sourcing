@@ -10,6 +10,7 @@
 
 import type { DTOMapper } from './dtoMapper';
 import { DefaultDTOMapper } from './dtoMapper';
+import { LKQDTOMapper } from '../clients/lkq/lkqDTOMapper';
 
 /**
  * Registry of vendor-specific DTOMapper implementations.
@@ -45,6 +46,16 @@ export function getDTOMapper(
     return factory();
   }
   return new DefaultDTOMapper(dataSource);
+}
+
+/**
+ * Register all known vendor-specific DTOMappers.
+ *
+ * Call this once at application startup (or in tests) to ensure
+ * vendor-specific mappers are available via getDTOMapper().
+ */
+export function initVendorDTOMappers(): void {
+  registerDTOMapper('lkq', () => new LKQDTOMapper());
 }
 
 /**
