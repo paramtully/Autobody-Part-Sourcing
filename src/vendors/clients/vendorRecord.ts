@@ -1,0 +1,47 @@
+import { partConditionEnum, availabilityStatusEnum } from "../../db/schema/enums";
+
+export type PartCondition = (typeof partConditionEnum.enumValues)[number];
+// 'NEW_OEM' | 'NEW_AFTERMARKET' | 'RECYCLED' | 'REMANUFACTURED' | 'RECONDITIONED' | 'UNKNOWN'
+
+export type AvailabilityStatus = (typeof availabilityStatusEnum.enumValues)[number];
+// 'IN_STOCK' | 'LOW_STOCK' | 'BACKORDER' | 'SPECIAL_ORDER' | 'UNKNOWN'
+
+export type UnknownRawVendorRecord = unknown;
+
+export interface VendorRecord {
+    part: {
+      name: string;
+      category: string;
+      position?: string;
+    };
+    // At least one identifier required — listing is rejected if empty
+    identifiers: Array<{
+      type: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE';
+      value: string;
+      manufacturer?: string;    // e.g. "Honda", "TYC", "Depo" — brand lives here
+      certification?: 'CAPA' | 'NSF';
+    }>;
+    fitments: Array<{
+      make: string;
+      model: string;
+      year: number;
+      trim?: string;
+      engine?: string;
+    }>;
+    listing: {
+      vendorListingExternalId: string;
+      sourceUrl?: string;
+      condition: PartCondition;         // NEW_OEM | NEW_AFTERMARKET | RECYCLED | REMANUFACTURED | RECONDITIONED | UNKNOWN
+      description?: string;
+      quantityAvailable?: number;
+      availabilityStatus: AvailabilityStatus;
+      priceMinorMin: number;
+      priceMinorMax?: number;
+      currency: string;
+      sourceVehicleVin?: string;        // salvage provenance
+      sourceMileage?: number;
+      sourceDamageType?: string;
+      estimatedShipTimeHours?: number;
+      images?: Array<{ url: string; type?: string }>;
+    };
+  }

@@ -1,0 +1,1 @@
+export { default as eBayVendorClient } from './vendorClient.ebay';
