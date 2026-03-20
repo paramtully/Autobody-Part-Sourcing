@@ -21,9 +21,7 @@ import {
 import { vendors, warehouseLocations } from './vendors';
 import { partIdentifiers } from './parts';
 
-export const listings = pgTable(
-    'listings',
-    {
+export const listings = pgTable( 'listings', {
         id: uuid('id').primaryKey().defaultRandom(),
         vendorId: varchar('vendor_id', { length: 50 })
             .notNull()
@@ -94,9 +92,7 @@ export const listings = pgTable(
     }),
 );
 
-export const listingImages = pgTable(
-    'listing_images',
-    {
+export const listingImages = pgTable('listing_images', {
         id: uuid('id').primaryKey().defaultRandom(),
         listingId: uuid('listing_id')
             .notNull()

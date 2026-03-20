@@ -1,0 +1,8 @@
+{
+  "name": "autobody-part-sourcing",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "src/db"
+  ]
+}

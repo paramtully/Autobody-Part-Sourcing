@@ -1,5 +1,5 @@
 import type { Db } from '../client';
-import { vendorEmailLogs } from '../schema';
+import { vendorEmailLogs } from '../models';
 
 export type EmailLogRow = typeof vendorEmailLogs.$inferSelect;
 

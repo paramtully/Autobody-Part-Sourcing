@@ -11,6 +11,7 @@ import {
     index,
 } from 'drizzle-orm/pg-core';
 import {
+    partCategoryEnum,
     partPositionEnum,
     partIdentifierTypeEnum,
     certificationEnum,
@@ -20,7 +21,7 @@ import {
 export const parts = pgTable('parts', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
-    category: varchar('category', { length: 100 }).notNull(),
+    category: partCategoryEnum('category').notNull(),
     position: partPositionEnum('position'),
     description: text('description'),
     weightGrams: integer('weight_grams'),

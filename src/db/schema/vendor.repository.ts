@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../client';
-import { vendors, warehouseLocations, vendorWarehouseLocations } from '../schema';
+import { vendors, warehouseLocations, vendorWarehouseLocations } from '../models';
 
 export type VendorRow = typeof vendors.$inferSelect;
 export type VendorInsert = typeof vendors.$inferInsert;

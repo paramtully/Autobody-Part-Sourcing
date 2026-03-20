@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../client';
-import { payments } from '../schema';
+import { payments } from '../models';
 
 export type PaymentRow = typeof payments.$inferSelect;
 export type PaymentInsert = typeof payments.$inferInsert;

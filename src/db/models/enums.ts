@@ -24,6 +24,88 @@ export const vendorOrderingModeEnum = pgEnum('vendor_ordering_mode', [
 ]);
 
 // ── Part / Listing ───────────────────────────────────────────────
+export const partCategoryEnum = pgEnum('part_category', [
+    // Body Panels
+    'BUMPER',
+    'FENDER',
+    'DOOR',
+    'HOOD',
+    'TRUNK_LID',
+    'QUARTER_PANEL',
+    'ROOF_PANEL',
+    'ROCKER_PANEL',
+    'WHEEL_ARCH',
+    // Lighting
+    'HEADLIGHT',
+    'TAILLIGHT',
+    'FOG_LIGHT',
+    'TURN_SIGNAL',
+    'MARKER_LIGHT',
+    'REVERSE_LIGHT',
+    'INTERIOR_LIGHT',
+    // Glass
+    'WINDSHIELD',
+    'REAR_WINDOW',
+    'SIDE_WINDOW',
+    'SUNROOF_GLASS',
+    // Exterior Trim
+    'GRILLE',
+    'BUMPER_COVER',
+    'MOLDING',
+    'TRIM_PIECE',
+    'BADGE',
+    'EMBLEM',
+    // Mirrors
+    'MIRROR',
+    'MIRROR_GLASS',
+    'MIRROR_COVER',
+    // Doors & Accessories
+    'DOOR_HANDLE',
+    'DOOR_LOCK',
+    'DOOR_GLASS',
+    'DOOR_MIRROR',
+    'HINGE',
+    // Hood & Trunk
+    'HOOD_HINGE',
+    'HOOD_LATCH',
+    'TRUNK_HINGE',
+    'TRUNK_LATCH',
+    // Fenders & Liners
+    'FENDER_LINER',
+    'WHEEL_WELL_LINER',
+    // Bumpers
+    'BUMPER_BEAM',
+    'BUMPER_BRACKET',
+    'BUMPER_FOAM',
+    // Radiator Support
+    'RADIATOR_SUPPORT',
+    'CORE_SUPPORT',
+    // Frame & Structure
+    'FRAME_RAIL',
+    'UNIBODY_PANEL',
+    'CROSSMEMBER',
+    // Wheels & Tires
+    'WHEEL',
+    'WHEEL_COVER',
+    'TIRE',
+    // Sensors & Electronics
+    'PARKING_SENSOR',
+    'BLIND_SPOT_SENSOR',
+    'CAMERA',
+    'RADAR_SENSOR',
+    'HEADLIGHT_LEVELING_SENSOR',
+    // Brackets & Mounts
+    'BRACKET',
+    'MOUNT',
+    'SUPPORT',
+    // Weatherstripping & Seals
+    'WEATHERSTRIP',
+    'SEAL',
+    'GASKET',
+    // Other
+    'OTHER',
+]);
+
 export const partConditionEnum = pgEnum('part_condition', [
     'NEW_OEM',
     'NEW_AFTERMARKET',
@@ -149,8 +231,3 @@ export const ingestionRunStatusEnum = pgEnum('ingestion_run_status', [
     'CANCELLED',
 ]);
 
-export const rawPayloadStatusEnum = pgEnum('raw_payload_status', [
-    'PENDING',
-    'PROCESSED',
-    'FAILED',
-]);

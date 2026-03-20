@@ -1,4 +1,4 @@
-import { partConditionEnum, availabilityStatusEnum } from "../../db/schema/enums";
+import { partConditionEnum, availabilityStatusEnum } from "../../db/models/enums";
 
 export type PartCondition = (typeof partConditionEnum.enumValues)[number];
 // 'NEW_OEM' | 'NEW_AFTERMARKET' | 'RECYCLED' | 'REMANUFACTURED' | 'RECONDITIONED' | 'UNKNOWN'

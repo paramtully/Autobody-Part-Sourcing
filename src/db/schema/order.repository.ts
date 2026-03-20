@@ -1,7 +1,7 @@
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import type { Db } from '../client';
-import { orders, orderStatusHistory, checkoutQuotes, feeConfigurations } from '../schema';
+import { orders, orderStatusHistory, checkoutQuotes, feeConfigurations } from '../models';
 
 // ── Types ────────────────────────────────────────────────────────
 

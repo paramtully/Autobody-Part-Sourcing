@@ -9,7 +9,7 @@ import {
   partFitments,
   fitments,
   partIdentifiers,
-} from '../schema';
+} from '../models';
 
 // ── Types ────────────────────────────────────────────────────────
 
