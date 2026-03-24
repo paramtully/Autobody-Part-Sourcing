@@ -37,3 +37,8 @@ next-env.d.ts
 
 # local files
 context.md
+
+packagelog
+
+**/package-lock.json
+**/node_modules

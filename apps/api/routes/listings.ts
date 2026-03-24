@@ -145,13 +145,7 @@ router.get('/by-part-number/:partNumber', async (req: Request, res: Response) =>
 router.get('/images/:listingId', (req: Request, res: Response) => {
     const listingId = req.params?.listingId;
     if (!listingId) {
-        return res.status(400function paginatedResponse(rows: any[], pageSize: number) {
-  return {
-    listings: rows,
-    hasMore: rows.length === pageSize,
-    cursor: rows.length ? rows[rows.length - 1].id : null,
-  };
-}).json({ error: 'Listing ID is required' });
+        return res.status(400).json({ error: 'Listing ID is required' });
     }
     
     db.select({
