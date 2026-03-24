@@ -14,7 +14,17 @@ const listingParams = {
 
     // part info
     partNumber: partIdentifiers.value,
-    partType: partIdentifiers.type,
+    partName: parts.name,
+    partCategory: parts.category,
+    partPosition: parts.position,
+    partDescription: parts.description,
+    partWeightGrams: parts.weightGrams,
+    partIsDiscontinued: parts.isDiscontinued,
+
+    // listing info
+    type: partIdentifiers.type,
+    manufacturer: partIdentifiers.manufacturer,
+    certification: partIdentifiers.certification,
     condition: listings.condition,
     description: listings.description,
     quantityAvailable: listings.quantityAvailable,
@@ -108,6 +118,7 @@ router.get('/by-part-number/:partNumber', async (req: Request, res: Response) =>
         // get listings
         const result = await db.select(listingParams).from(listings)
             .innerJoin(partIdentifiers, eq(listings.partIdentifierId, partIdentifiers.id))
+            .innerJoin(parts, eq(partIdentifiers.partId, parts.id))
             .where(
                 and(
                     cursor ? gt(listings.id, cursor) : undefined,
