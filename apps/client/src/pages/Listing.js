@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLocation } from "react";
+import { useState, useEffect, useLocation } from "react";
 import axios from "axios";
 
 const baseURL = process.env.baseURL ?? 'http://localhost:5050';

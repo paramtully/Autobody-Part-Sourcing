@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import { partCategoryEnum, partPositionEnum, fitmentConstraintEnum } from '@repo/db/models/enums';
 import { db, partFitments } from '@repo/db';
-import { fitments } from '@repo/db/models/fitments';
+import { fitments } from '@repo/db/models/parts';
 import { eq, max, min, sql } from 'drizzle-orm';
 
 const router = express.Router();
@@ -12,8 +12,8 @@ type FitmentResult = {
     constraint: string | null;
     minYear: number;
     maxYear: number;
-    trims: string[];   // ✅ no null
-    engines: string[]; // ✅ no null
+    trims: string[];   //  no null
+    engines: string[]; //  no null
 };
 
 router.get('/categories', (req: Request, res: Response) => {
@@ -28,7 +28,7 @@ router.get('/constraints', (req: Request, res: Response) => {
     return res.status(200).json({constraints: fitmentConstraintEnum.enumValues});
 });
 
-router.get('/makes-with-models', async (req: Request, res: Response) => {
+router.get('/makes-with-models', (req: Request, res: Response) => {
     db.select({
         make: fitments.make,
         models: sql<string[]>`array_agg(distinct ${fitments.model})`,
@@ -70,11 +70,11 @@ router.get('/:partId', (req: Request, res: Response) => {
         trims: sql<string[]>`
             coalesce(
                 array_agg(distinct ${fitments.trim})
-                filter (where ${fitments.engine} is not null),
+                filter (where ${fitments.trim} is not null),
                 '{}'::text[]
             )`,
         engine: sql<string[]>`
-            coalesc(
+            coalesce(
                 array_agg(distinct ${fitments.engine})
                 filter (where ${fitments.engine} is not null),
                 '{}'::text[]

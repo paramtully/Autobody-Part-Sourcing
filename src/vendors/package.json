@@ -1,0 +1,11 @@
+{
+  "name": "@repo/vendors",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@repo/db": "*"
+  }
+}

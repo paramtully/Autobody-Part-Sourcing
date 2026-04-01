@@ -6,7 +6,8 @@
  */
 
 import { VendorError } from "../clients/vendorError";
-import { UnknownRawVendorRecord, VendorClient } from "../clients/vendorClient";
+import { VendorClient } from "../clients/vendorClient";
+import { UnknownRawVendorRecord, VendorRecord } from "../clients/vendorRecord";
 
 export interface RetryOptions {
     maxAttempts?: number;       // default 3
@@ -95,4 +96,7 @@ export class RetryableVendorClient implements VendorClient {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    mapRecord(raw: UnknownRawVendorRecord): VendorRecord {
+        return this.inner.mapRecord(raw);
+    }
 }

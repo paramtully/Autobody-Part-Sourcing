@@ -44,14 +44,6 @@ function parseCursor(raw: unknown): number | undefined {
     return n;
 }
 
-function paginatedResponse(rows: any[], pageSize: number = PAGE_SIZE) {
-    return {
-      listings: rows,
-      hasMore: rows.length === pageSize,
-      cursor: rows.length ? rows[rows.length - 1].id : null,
-    };
-}
-
 // search paginated listings by fitment
 router.get("/by-fitment", (req: Request, res: Response) => {
 
@@ -164,7 +156,7 @@ router.get('/images/:listingId', (req: Request, res: Response) => {
         imageType: listingImages.imageType,
         sortOrder: listingImages.sortOrder
     }).from(listingImages)
-        .where(eq(listingImages.id, listingId as string))
+        .where(eq(listingImages.listingId, listingId as string))
     .then((images: any[]) => {
         return res.status(200).json({
             listingId: listingId,

@@ -1,31 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useSearchParams, useInfiniteQuery } from "react";
 import ListingCard from "../components/ListingCard";
 import axios from "axios";
 
 const BASE_URL = process.env.baseURL ?? 'http://localhost:5050';
 
 const Listings = () => {
-    const [listings, setListings] = useState([]);
     const [makesWithModels, setMakesWithModels] = useState({});
     const [categories, setCategories] = useState([]);
     const [positions, setPositions] = useState([]);
     const [constraints, setConstraints] = useState([]);
     const [years, setYears] = useState([]);
-    const [isSearchFitment, setIsSearchByFitment] = useState(true);
-
-    const [selectedFitment, setSelectedFitment] = useState({
-        make: '', model: '', year: undefined,
-        category: undefined, position: undefined, constraint: undefined
-    });
-    const [selectedPartNumber, setSelectedPartNumber] = useState({ partNumber: '', year: undefined });
-
-    // pagination state
-    const [cursor, setCursor] = useState(null);
-    const [hasMore, setHasMore] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-
-    // track the last submitted search so "load more" can repeat it
-    const lastSearchRef = useRef(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -48,59 +32,68 @@ const Listings = () => {
         };
         fetchData();
     }, []);
+    
+    const [isSearchFitment, setIsSearchByFitment] = useState(true);
+    const [searchParams, setSearchParams] = useSearchParams();
 
-    const fetchListingsByFitment = async (params, append = false) => {
-        setIsLoading(true);
-        try {
-            const { data } = await axios.get(`${BASE_URL}/listings/by-fitment`, { params });
-            setListings(prev => append ? [...prev, ...data.listings] : data.listings);
-            setCursor(data.cursor);
-            setHasMore(data.hasMore);
-        } catch (err) {
-            console.error('Error searching by fitment:', err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    // These are what the query uses — read from URL
+    const make = searchParams.get('make') ?? '';
+    const model = searchParams.get('model') ?? '';
+    const year = searchParams.get('year') ?? '';
+    const category = searchParams.get('category') ?? '';
+    const position = searchParams.get('position') ?? '';
+    const constraint = searchParams.get('constraint') ?? '';
+    const partNumber = searchParams.get('partNumber') ?? '';
 
-    const fetchListingsByPartNumber = async (params, append = false) => {
-        setIsLoading(true);
-        try {
-            const { data } = await axios.get(`${BASE_URL}/listings/by-part-number/${params.partNumber}`, {
-                params: { cursor: params.cursor }
-            });
-            setListings(prev => append ? [...prev, ...data.listings] : data.listings);
-            setCursor(data.cursor);
-            setHasMore(data.hasMore);
-        } catch (err) {
-            console.error('Error searching by part number:', err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const [draftFitment, setDraftFitment] = useState({
+        make: make, model: model, year: year,
+        category: category, position: position, constraint: constraint
+    });
+    const [draftPartNumber, setDraftPartNumber] = useState(partNumber);
+
+    const fitmentQuery = useInfiniteQuery({
+        queryKey: ['listings', 'fitments', { make: make, model: model, year: year, category: category, position: position, constraint: constraint }],
+        queryFn: ({ pageParam }) => 
+            axios.get(`${BASE_URL}/listings/by-fitment`, {
+                params: {
+                    make: make, model: model, year: year, category: category, position: position, constraint: constraint,
+                    cursor: pageParam
+                }
+            }).then(r => r.data),
+            getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.cursor : undefined,
+            enabled: isSearchFitment && !!(make && model && year),
+    });
+
+    const partNumberQuery = useInfiniteQuery({
+        queryKey: ['listings', 'partNumber', { partNumber }],
+        queryFn: ({ pageParam }) => 
+            axios.get(`${BASE_URL}/listings/by-part-number/${partNumber}`, {
+                params: { cursor: pageParam }
+            }).then(r => r.data),
+        getNextPageParam: lastPage => lastPage.hasMore ? lastPage.cursor : undefined,
+        enabled: !isSearchFitment && !!partNumber,
+    });
+
+    const activeQuery = isSearchFitment ? fitmentQuery : partNumberQuery;
+    const listings = activeQuery.data?.pages.flatMap(p => p.listings) ?? [];
+    const { fetchNextPage, hasNextPage, isFetchingNextPage } = activeQuery;
+
 
     const handleSearchByFitment = (e) => {
         e.preventDefault();
-        const params = { ...selectedFitment };
-        lastSearchRef.current = { type: 'fitment', params };
-        setCursor(null);
-        fetchListingsByFitment(params, false);
+        setSearchParams({
+            make: draftFitment.make, 
+            model: draftFitment.model,
+            year: draftFitment.year ?? "",
+            category: draftFitment.category ?? "",
+            position: draftFitment.position ?? "",
+            constarint: draftFitment.constraint ?? "",
+        });
     };
 
     const handleSearchByPartNumber = (e) => {
         e.preventDefault();
-        const params = { partNumber: selectedPartNumber.partNumber };
-        lastSearchRef.current = { type: 'partNumber', params };
-        setCursor(null);
-        fetchListingsByPartNumber(params, false);
-    };
-
-    const handleLoadMore = () => {
-        if (!lastSearchRef.current || !cursor) return;
-        const { type, params } = lastSearchRef.current;
-        const paramsWithCursor = { ...params, cursor };
-        if (type === 'fitment') fetchListingsByFitment(paramsWithCursor, true);
-        else fetchListingsByPartNumber(paramsWithCursor, true);
+        setSearchParams({ partNumber: draftPartNumber.partNumber });
     };
 
     return (
@@ -112,32 +105,32 @@ const Listings = () => {
 
             {isSearchFitment ? (
                 <form onSubmit={handleSearchByFitment}>
-                    <select value={selectedFitment.make} onChange={(e) => setSelectedFitment({ ...selectedFitment, make: e.target.value })}>
+                    <select value={draftFitment.make} onChange={(e) => setDraftFitment({ ...draftFitment, make: e.target.value })}>
                         <option value=''>Select a make</option>
                         {Object.keys(makesWithModels).map(make => <option key={make} value={make}>{make}</option>)}
                     </select>
-                    <select value={selectedFitment.model} disabled={!selectedFitment.make} onChange={(e) => setSelectedFitment({ ...selectedFitment, model: e.target.value })}>
-                        <option value=''>{selectedFitment.make ? 'Select a model' : 'Select a make first'}</option>
-                        {makesWithModels[selectedFitment.make]?.map(model => <option key={model} value={model}>{model}</option>)}
+                    <select value={draftFitment.model} disabled={!draftFitment.make} onChange={(e) => setDraftFitment({ ...draftFitment, model: e.target.value })}>
+                        <option value=''>{draftFitment.make ? 'Select a model' : 'Select a make first'}</option>
+                        {makesWithModels[draftFitment.make]?.map(model => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <select value={selectedFitment.year ?? ""} onChange={(e) => setSelectedFitment({ ...selectedFitment, year: e.target.value })}>
+                    <select value={draftFitment.year ?? ""} onChange={(e) => setDraftFitment({ ...draftFitment, year: e.target.value })}>
                         <option value=''>Select a year</option>
                         {years.map(year => <option key={year} value={year}>{year}</option>)}
                     </select>
-                    <select value={selectedFitment.category ?? ""} onChange={(e) => setSelectedFitment({ ...selectedFitment, category: e.target.value })}>
+                    <select value={draftFitment.category ?? ""} onChange={(e) => setDraftFitment({ ...draftFitment, category: e.target.value })}>
                         <option value=''>Select a category</option>
                         {categories.map(category => <option key={category} value={category}>{category}</option>)}
                     </select>
-                    <select value={selectedFitment.position ?? ""} onChange={(e) => setSelectedFitment({ ...selectedFitment, position: e.target.value })}>
+                    <select value={draftFitment.position ?? ""} onChange={(e) => setDraftFitment({ ...draftFitment, position: e.target.value })}>
                         <option value=''>Select a position</option>
                         {positions.map(position => <option key={position} value={position}>{position}</option>)}
                     </select>
-                    <select value={selectedFitment.constraint ?? ""} onChange={(e) => setSelectedFitment({ ...selectedFitment, constraint: e.target.value })}>
+                    <select value={draftFitment.constraint ?? ""} onChange={(e) => setDraftFitment({ ...draftFitment, constraint: e.target.value })}>
                         <option value=''>Select a constraint</option>
                         {constraints.map(constraint => <option key={constraint} value={constraint}>{constraint}</option>)}
                     </select>
-                    <button type="submit" disabled={isLoading || (!selectedFitment.make && !selectedFitment.model && !selectedFitment.year)}>
-                        {isLoading ? 'Searching...' : 'Search'}
+                    <button type="submit" disabled={!draftFitment.make || !draftFitment.model || !draftFitment.year}>
+                        Search
                     </button>
                 </form>
             ) : (
@@ -145,11 +138,11 @@ const Listings = () => {
                     <label>Part Number: </label>
                     <input
                         type="text"
-                        value={selectedPartNumber.partNumber}
-                        onChange={(e) => setSelectedPartNumber({ ...selectedPartNumber, partNumber: e.target.value })}
+                        value={draftPartNumber.partNumber}
+                        onChange={(e) => setDraftPartNumber({ ...draftPartNumber, partNumber: e.target.value })}
                     />
-                    <button type="submit" disabled={isLoading || !selectedPartNumber.partNumber.length}>
-                        {isLoading ? 'Searching...' : 'Search'}
+                    <button type="submit" disabled={!draftPartNumber.partNumber}>
+                        Search
                     </button>
                 </form>
             )}
@@ -160,9 +153,9 @@ const Listings = () => {
                 ))}
             </div>
 
-            {hasMore && (
-                <button onClick={handleLoadMore} disabled={isLoading}>
-                    {isLoading ? 'Loading...' : 'Load More'}
+            {hasNextPage && (
+                <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                    {isFetchingNextPage ? "Loading..." : "Load More"}
                 </button>
             )}
         </div>

@@ -1,10 +1,12 @@
-import { partConditionEnum, availabilityStatusEnum } from "../../db/models/enums";
+import { partConditionEnum, availabilityStatusEnum, fitmentConstraintEnum } from "../../db/models/enums";
 
 export type PartCondition = (typeof partConditionEnum.enumValues)[number];
 // 'NEW_OEM' | 'NEW_AFTERMARKET' | 'RECYCLED' | 'REMANUFACTURED' | 'RECONDITIONED' | 'UNKNOWN'
 
 export type AvailabilityStatus = (typeof availabilityStatusEnum.enumValues)[number];
 // 'IN_STOCK' | 'LOW_STOCK' | 'BACKORDER' | 'SPECIAL_ORDER' | 'UNKNOWN'
+
+export type FitmentConstraint = (typeof fitmentConstraintEnum.enumValues)[number];
 
 export type UnknownRawVendorRecord = unknown;
 
@@ -27,6 +29,7 @@ export interface VendorRecord {
       year: number;
       trim?: string;
       engine?: string;
+      constraint?: FitmentConstraint;
     }>;
     listing: {
       vendorListingExternalId: string;

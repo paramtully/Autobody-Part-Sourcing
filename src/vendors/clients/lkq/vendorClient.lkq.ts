@@ -2,7 +2,8 @@ import { createHmac } from "crypto";
 import { UnknownRawVendorRecord, VendorClient } from "../vendorClient";
 import { lkqPageSchema } from "./schema.lkq";
 import { VendorError, VendorErrorType } from "../vendorError";
-
+import * as dotenv from 'dotenv';
+dotenv.config();
 /**
  * LKQ Corporation inventory client.
  *

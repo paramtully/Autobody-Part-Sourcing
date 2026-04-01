@@ -1,8 +1,11 @@
 import { VendorClient } from "../vendorClient";
 import { VendorError, VendorErrorType } from "../vendorError";
 import { AvailabilityStatus, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
-import { eBayItemSchema, mapEbayCondition, mapEbayItemAvailability } from "./schema.ebay.item";
+import { eBayItemSchema, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint } from "./schema.ebay.item";
 import { eBaySearchResponseSchema } from "./schema.ebay.search";
+import { Buffer } from 'buffer';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 interface eBayConfig {
     vendorId: string;
@@ -64,7 +67,7 @@ export default class eBayVendorClient implements VendorClient {
         const model = getProp('Model');
         const year = parseInt(getProp('Year') ?? '', 10);
         const fitments = make && model && !isNaN(year)
-            ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine') }]
+            ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine'), constraint: mapEbayConstraint(item.product?.aspects) }]
             : [];
 
         // Prefer the MPN from product.aspects; fall back to top-level mpn, then legacyItemId.

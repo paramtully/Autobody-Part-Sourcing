@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { FitmentConstraint } from '../vendorRecord';
 
 // ── Shared sub-schemas ────────────────────────────────────────────
 
@@ -137,6 +138,49 @@ export function mapEbayCondition(condition?: string): string {
         if (pattern.test(condition)) return mapped;
     }
     return 'RECYCLED';
+}
+
+// ── Constraint mapping ────────────────────────────────────────────
+
+type EbayAspects = Record<string, string[]>;
+
+function getAspect(aspects: EbayAspects, key: string): string | undefined {
+    return aspects[key]?.[0];
+}
+
+/** Maps eBay product.aspects to a fitment constraint.
+ *  Returns the first matching constraint found, or undefined if none apply. */
+export function mapEbayConstraint(aspects?: EbayAspects): FitmentConstraint | undefined {
+    if (!aspects) return undefined;
+
+    const parkingSensors = getAspect(aspects, 'Parking Sensors');
+    if (parkingSensors === 'With') return 'WITH_PARKING_SENSORS';
+    if (parkingSensors === 'Without') return 'WITHOUT_PARKING_SENSORS';
+
+    const radar = getAspect(aspects, 'Blind Spot Sensor') ?? getAspect(aspects, 'Radar');
+    if (radar === 'With') return 'WITH_RADAR';
+    if (radar === 'Without') return 'WITHOUT_RADAR';
+
+    const camera = getAspect(aspects, 'Backup Camera') ?? getAspect(aspects, 'Camera');
+    if (camera === 'With') return 'WITH_CAMERA';
+    if (camera === 'Without') return 'WITHOUT_CAMERA';
+
+    const headlightType = getAspect(aspects, 'Headlight Type');
+    if (headlightType === 'LED') return 'LED';
+    if (headlightType === 'Halogen') return 'HALOGEN';
+    if (headlightType === 'HID') return 'HID';
+    if (headlightType === 'Adaptive') return 'ADAPTIVE';
+
+    const driveType = getAspect(aspects, 'Drive Type');
+    if (driveType === 'AWD') return 'AWD';
+    if (driveType === 'FWD') return 'FWD';
+    if (driveType === 'RWD') return 'RWD';
+
+    const sunroof = getAspect(aspects, 'Sunroof');
+    if (sunroof === 'With') return 'SUNROOF';
+    if (sunroof === 'Without') return 'NO_SUNROOF';
+
+    return undefined;
 }
 
 // ── Availability mapping ──────────────────────────────────────────

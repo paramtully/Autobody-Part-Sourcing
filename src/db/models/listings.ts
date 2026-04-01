@@ -93,11 +93,10 @@ export const listings = pgTable( 'listings', {
 );
 
 export const listingImages = pgTable('listing_images', {
-        id: uuid('id').primaryKey().defaultRandom(),
+        url: text('url').notNull().primaryKey(),
         listingId: uuid('listing_id')
             .notNull()
             .references(() => listings.id, { onDelete: 'cascade' }),
-        url: text('url').notNull(),
         imageType: text('image_type'), // PRIMARY, ANGLE, DAMAGE, STOCK
         sortOrder: integer('sort_order'),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

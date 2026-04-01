@@ -28,7 +28,11 @@ export const parts = pgTable('parts', {
     isDiscontinued: boolean('is_discontinued').default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+},
+ (table) => ({
+        uniqueIdentifier: unique('part_identifiers_unique').on(table.name, table.category),
+    }),
+);
 
 export const partIdentifiers = pgTable(
     'part_identifiers',

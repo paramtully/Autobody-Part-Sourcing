@@ -23,7 +23,7 @@ export interface VendorClient {
    * @returns Paginated response with records and pagination metadata
    */
     fetchInventoryPage?(cursor?: string): Promise<{
-        records: VendorRecord[];
+        records: UnknownRawVendorRecord[];
         nextCursor?: string;
         hasMore: boolean;
     }>;
