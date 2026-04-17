@@ -8,7 +8,7 @@
  */
 import type { OutboxEventRow, OutboxRepo } from '@repo/db';
 import type { EventPublisher } from './eventPublisher';
-import type { NodeJS } from 'node';
+import type { Timeout } from 'node:timers/promises';
 
 export interface OutboxPublisherOptions {
   batchSize?: number;
@@ -25,7 +25,7 @@ const DEFAULTS: Required<OutboxPublisherOptions> = {
 export class OutboxPublisher {
   private readonly opts: Required<OutboxPublisherOptions>;
   private running = false;
-  private timer: NodeJS.Timeout | null = null;
+  private timer: Timeout | null = null;
 
   constructor(
     private readonly outboxRepo: OutboxRepo,
