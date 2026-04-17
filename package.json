@@ -4,6 +4,7 @@
   "workspaces": [
     "apps/*",
     "src/db",
-    "src/vendors"
+    "src/vendors",
+    "src/ordering"
   ]
 }

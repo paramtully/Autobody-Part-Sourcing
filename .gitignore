@@ -40,3 +40,10 @@ context.md
 
 **/package-lock.json
 **/node_modules
+
+# ai files
+**/*.claude
+**/CLAUDE.md
+**/*.cursor
+**/graphify-out
+

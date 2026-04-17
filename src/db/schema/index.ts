@@ -15,3 +15,6 @@ export type { PaymentRow } from './payment.repository';
 
 export { EmailLogRepo } from './email-log.repository';
 export type { EmailLogRow } from './email-log.repository';
+
+export { OutboxRepo } from './outbox.repository';
+export type { OutboxEventRow, CreateOutboxEventInput } from './outbox.repository';
