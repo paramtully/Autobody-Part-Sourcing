@@ -1,4 +1,4 @@
-import { VendorClient } from './clients/vendorClient';
+import { VendorInventoryClient } from './clients/vendorInventoryClient';
 import DrizzleRecordProcessor, { BatchResult } from './recordProcessor/recordProcessor';
 
 export interface PageResult {
@@ -9,7 +9,7 @@ export interface PageResult {
 
 export class VendorPipeline {
     constructor(
-        private readonly client: VendorClient,
+        private readonly client: VendorInventoryClient,
         private readonly processor: DrizzleRecordProcessor,
     ) {}
 

@@ -6,7 +6,7 @@
  */
 
 import { VendorError } from "../clients/vendorError";
-import { VendorClient } from "../clients/vendorClient";
+import { VendorClient } from "../clients/vendorInventoryClient";
 import { UnknownRawVendorRecord, VendorRecord } from "../clients/vendorRecord";
 
 export interface RetryOptions {

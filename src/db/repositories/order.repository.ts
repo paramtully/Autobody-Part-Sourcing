@@ -1,7 +1,7 @@
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import type { Db } from '../client';
-import { orders, orderStatusHistory, checkoutQuotes, feeConfigurations } from '../models';
+import { orders, checkoutQuotes } from '../models';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -15,10 +15,12 @@ export type QuoteInsert = typeof checkoutQuotes.$inferInsert;
 export class OrderRepo {
   constructor(private readonly db: Db) {}
 
-  async create(input: Omit<OrderInsert, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'>): Promise<OrderRow> {
-    const [{ nextval }] = await this.db.execute(
+  async create(
+    input: Omit<OrderInsert, 'id' | 'orderNumber' | 'orderLookupToken' | 'createdAt' | 'updatedAt'>,
+  ): Promise<OrderRow> {
+    const [{ nextval }] = (await this.db.execute(
       sql`SELECT nextval('order_number_seq') as nextval`,
-    ) as unknown as [{ nextval: string }];
+    )) as unknown as [{ nextval: string }];
     const orderNumber = `ORD-${new Date().getFullYear()}-${nextval}`;
     const orderLookupToken = randomBytes(32).toString('hex');
 
@@ -36,49 +38,43 @@ export class OrderRepo {
   }
 
   async findByLookupToken(token: string): Promise<OrderRow | null> {
-    const [row] = await this.db.select().from(orders).where(eq(orders.orderLookupToken, token));
+    const [row] = await this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.orderLookupToken, token));
     return row ?? null;
   }
 
   async findByIdempotencyKey(key: string): Promise<OrderRow | null> {
-    const [row] = await this.db.select().from(orders).where(eq(orders.idempotencyKey, key));
+    const [row] = await this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.idempotencyKey, key));
     return row ?? null;
   }
 
-  /** Optimistic concurrency update — only succeeds if current status matches expected. */
+  /**
+   * Optimistic concurrency update — only succeeds if current status matches
+   * expectedStatus. Returns the updated row, or null if the status had already
+   * changed (caller should treat as a no-op / retry).
+   */
   async updateStatus(
     orderId: string,
     expectedStatus: OrderRow['status'],
     newStatus: OrderRow['status'],
-    opts: { reason?: string; actor?: string } = {},
   ): Promise<OrderRow | null> {
-    const rows = await this.db
+    const [row] = await this.db
       .update(orders)
       .set({ status: newStatus, updatedAt: new Date() })
       .where(and(eq(orders.id, orderId), eq(orders.status, expectedStatus)))
       .returning();
 
-    if (rows.length === 0) return null;
-
-    // Write status history
-    await this.db.insert(orderStatusHistory).values({
-      orderId,
-      fromStatus: expectedStatus,
-      toStatus: newStatus,
-      reason: opts.reason,
-      actor: opts.actor ?? 'system',
-    });
-
-    return rows[0];
+    return row ?? null;
   }
 
   async updateVendorOrder(
     orderId: string,
-    fields: {
-      vendorOrderId?: string;
-      vendorOrderPlacedAt?: Date;
-      vendorOrderConfirmedAt?: Date;
-    },
+    fields: { vendorOrderId?: string },
   ): Promise<OrderRow> {
     const [row] = await this.db
       .update(orders)
@@ -86,6 +82,52 @@ export class OrderRepo {
       .where(eq(orders.id, orderId))
       .returning();
     return row;
+  }
+
+  /** Set the Stripe PaymentIntent id after creation. */
+  async setStripePayment(orderId: string, providerPaymentId: string): Promise<void> {
+    await this.db
+      .update(orders)
+      .set({ paymentProviderPaymentId: providerPaymentId, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+  }
+
+  /** Update the inline payment status on the order row. */
+  async setPaymentStatus(
+    orderId: string,
+    status: OrderRow['paymentStatus'],
+  ): Promise<void> {
+    await this.db
+      .update(orders)
+      .set({ paymentStatus: status, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+  }
+
+  /** Update tax and total on the order row (set from provider's tax calculation at confirm). */
+  async setTaxAndTotal(orderId: string, taxMinor: number, totalMinor: number): Promise<void> {
+    await this.db
+      .update(orders)
+      .set({ taxMinor, totalMinor, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+  }
+
+  /** Increment total_refunded_minor after a successful refund. */
+  async addRefundedAmount(orderId: string, amountMinor: number): Promise<void> {
+    await this.db
+      .update(orders)
+      .set({
+        totalRefundedMinor: sql`${orders.totalRefundedMinor} + ${amountMinor}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, orderId));
+  }
+
+  async findByProviderPaymentId(providerPaymentId: string): Promise<OrderRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.paymentProviderPaymentId, providerPaymentId));
+    return row ?? null;
   }
 
   /** Find orders stuck in a given status longer than a threshold (for monitoring). */
@@ -109,33 +151,15 @@ export class QuoteRepo {
   }
 
   async findById(id: string): Promise<QuoteRow | null> {
-    const [row] = await this.db.select().from(checkoutQuotes).where(eq(checkoutQuotes.id, id));
+    const [row] = await this.db
+      .select()
+      .from(checkoutQuotes)
+      .where(eq(checkoutQuotes.id, id));
     return row ?? null;
   }
 
-  async markUsed(id: string): Promise<void> {
-    await this.db
-      .update(checkoutQuotes)
-      .set({ usedAt: new Date() })
-      .where(eq(checkoutQuotes.id, id));
-  }
-}
-
-// ── Fee Config Repository ─────────────────────────────────────────
-
-export class FeeConfigRepo {
-  constructor(private readonly db: Db) {}
-
-  /** Returns the current active fee percent (latest effectiveFrom where effectiveUntil IS NULL). */
-  async getCurrentFeePercent(): Promise<number> {
-    const [row] = await this.db
-      .select({ feePercent: feeConfigurations.feePercent })
-      .from(feeConfigurations)
-      .where(sql`${feeConfigurations.effectiveUntil} IS NULL`)
-      .orderBy(sql`${feeConfigurations.effectiveFrom} DESC`)
-      .limit(1);
-
-    if (!row) throw new Error('No active fee configuration found');
-    return Number(row.feePercent);
+  /** Delete quote on confirm — absence is the used signal. */
+  async delete(id: string): Promise<void> {
+    await this.db.delete(checkoutQuotes).where(eq(checkoutQuotes.id, id));
   }
 }

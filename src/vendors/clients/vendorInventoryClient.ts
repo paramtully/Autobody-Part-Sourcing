@@ -1,7 +1,7 @@
 import { VendorRecord, UnknownRawVendorRecord } from "./vendorRecord";
 
 
-export interface VendorClient {
+export interface VendorInventoryClient {
     readonly vendorId: string;
 
     /**

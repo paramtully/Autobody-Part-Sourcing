@@ -8,7 +8,6 @@
  */
 import type { OutboxEventRow, OutboxRepo } from '@repo/db';
 import type { EventPublisher } from './eventPublisher';
-import type { Timeout } from 'node:timers/promises';
 
 export interface OutboxPublisherOptions {
   batchSize?: number;
@@ -25,7 +24,7 @@ const DEFAULTS: Required<OutboxPublisherOptions> = {
 export class OutboxPublisher {
   private readonly opts: Required<OutboxPublisherOptions>;
   private running = false;
-  private timer: Timeout | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly outboxRepo: OutboxRepo,
@@ -83,7 +82,6 @@ export class OutboxPublisher {
     } catch (err) {
       await this.outboxRepo.incrementRetryCount(event.id);
       if (event.retryCount + 1 >= this.opts.maxRetries) {
-        await this.outboxRepo.markFailed(event.id);
         console.error(
           `[OutboxPublisher] event ${event.id} permanently failed after ${this.opts.maxRetries} retries`,
           err,

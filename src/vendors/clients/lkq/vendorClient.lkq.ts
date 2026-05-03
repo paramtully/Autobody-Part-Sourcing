@@ -1,5 +1,5 @@
 import { createHmac } from "crypto";
-import { UnknownRawVendorRecord, VendorClient } from "../vendorClient";
+import { UnknownRawVendorRecord, VendorInventoryClient } from "../vendorInventoryClient";
 import { lkqPageSchema } from "./schema.lkq";
 import { VendorError, VendorErrorType } from "../vendorError";
 import * as dotenv from 'dotenv';
@@ -34,7 +34,7 @@ interface LKQConfig {
     retryAfterMs?: number;
 }
 
-export class LKQVendorClient implements VendorClient {
+export class LKQVendorClient implements VendorInventoryClient {
     public readonly vendorId = 'lkq';
     private readonly DEFAULT_PAGE_SIZE = 500;
     private readonly config: LKQConfig = {

@@ -218,10 +218,10 @@ export const paymentStatusEnum = pgEnum('payment_status', [
     'CAPTURED',
     'CANCELLED',
     'FAILED',
+    'REFUNDED',
 ]);
 
 export const paymentProviderEnum = pgEnum('payment_provider', ['STRIPE']);
-export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'COMPLETED', 'FAILED']);
 
 // ── Ingestion ────────────────────────────────────────────────────
 export const ingestionRunStatusEnum = pgEnum('ingestion_run_status', [

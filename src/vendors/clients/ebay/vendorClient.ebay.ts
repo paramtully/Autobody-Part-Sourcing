@@ -1,4 +1,4 @@
-import { VendorClient } from "../vendorClient";
+import { VendorInventoryClient } from "../vendorInventoryClient";
 import { VendorError, VendorErrorType } from "../vendorError";
 import { AvailabilityStatus, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
 import { eBayItemSchema, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint } from "./schema.ebay.item";
@@ -18,7 +18,7 @@ interface eBayConfig {
     retryAfterMs?: number;
 }
 
-export default class eBayVendorClient implements VendorClient {
+export default class eBayVendorClient implements VendorInventoryClient {
     readonly vendorId = 'ebay';
     private readonly DEFAULT_PAGE_SIZE = 200;
     private readonly MOTORS_CATEGORY_ID = '6028';           //Motors → Parts & Accessories
