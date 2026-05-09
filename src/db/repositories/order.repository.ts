@@ -1,4 +1,4 @@
-import { eq, and, lt, sql } from 'drizzle-orm';
+import { eq, and, lt, or, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { Db, db } from '../client';
 import { orders, checkoutQuotes } from '../models';
@@ -9,6 +9,9 @@ export type OrderRow = typeof orders.$inferSelect;
 export type OrderInsert = typeof orders.$inferInsert;
 export type QuoteRow = typeof checkoutQuotes.$inferSelect;
 export type QuoteInsert = typeof checkoutQuotes.$inferInsert;
+
+/** Worker lease for vendor placement — stale claims may be overridden by another worker. */
+const CLAIM_LEASE_MS = 5 * 60 * 1000;
 
 // ── Order Repository ──────────────────────────────────────────────
 
@@ -54,6 +57,33 @@ export class OrderRepo {
       .select()
       .from(orders)
       .where(eq(orders.idempotencyKey, key));
+    return row ?? null;
+  }
+
+  /**
+   * Atomically claims an order for vendor placement.
+   * Wins if status is PAYMENT_AUTHORIZED, or VENDOR_ORDER_PLACING with a stale lease
+   * (null claimedAt or older than CLAIM_LEASE_MS).
+   */
+  async claimForVendorPlacement(orderId: string): Promise<OrderRow | null> {
+    const staleBefore = new Date(Date.now() - CLAIM_LEASE_MS);
+    const [row] = await this.db
+      .update(orders)
+      .set({ status: 'VENDOR_ORDER_PLACING', claimedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(orders.id, orderId),
+          or(
+            eq(orders.status, 'PAYMENT_AUTHORIZED'),
+            and(
+              eq(orders.status, 'VENDOR_ORDER_PLACING'),
+              lt(orders.claimedAt, staleBefore),
+            ),
+          ),
+        ),
+      )
+      .returning();
+
     return row ?? null;
   }
 

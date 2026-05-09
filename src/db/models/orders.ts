@@ -64,6 +64,8 @@ export const orders = pgTable(
         totalRefundedMinor: integer('total_refunded_minor').notNull().default(0),
         // Vendor tracking
         vendorOrderId: varchar('vendor_order_id', { length: 255 }),
+        /** Set when a worker claims the order for vendor placement; used for lease expiry. */
+        claimedAt: timestamp('claimed_at', { withTimezone: true }),
         // Payment — inline instead of a separate payments table (1:1 for MVP)
         paymentProviderPaymentId: varchar('payment_provider_payment_id', { length: 255 }),
         paymentStatus: paymentStatusEnum('payment_status'),

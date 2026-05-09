@@ -28,13 +28,8 @@ export class VendorOrderService {
    * Short-circuits if the order is not in the expected status (idempotent replay guard).
    */
   async placeOrder(orderId: string): Promise<void> {
-    const order = await this.orderRepo.findById(orderId);
+    const order = await this.orderRepo.claimForVendorPlacement(orderId);
     if (!order) {
-      console.error('[VendorOrderService] placeOrder: order not found', { orderId });
-      return;
-    }
-    if (order.status !== 'PAYMENT_AUTHORIZED') {
-      // Already processed (idempotent replay)
       return;
     }
 
@@ -76,7 +71,11 @@ export class VendorOrderService {
         await db.transaction(async (tx) => {
           const txDb = tx as unknown as Db;
 
-          const updated = await new OrderRepo(txDb).updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'VENDOR_CONFIRMED');
+          const updated = await new OrderRepo(txDb).updateStatus(
+            orderId,
+            'VENDOR_ORDER_PLACING',
+            'VENDOR_CONFIRMED',
+          );
           await new OrderRepo(txDb).updateVendorOrder(orderId, { vendorOrderId: result.vendorOrderId });
 
           if (updated) {
@@ -114,7 +113,7 @@ export class VendorOrderService {
           const txDb = tx as unknown as Db;
           const txOutbox = new OutboxRepo(txDb);
 
-          await new OrderRepo(txDb).updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'CANCELLED');
+          await new OrderRepo(txDb).updateStatus(orderId, 'VENDOR_ORDER_PLACING', 'CANCELLED');
           await new OrderRepo(txDb).setPaymentStatus(orderId, 'CANCELLED');
           await txOutbox.create({
             topic: ORDER_TOPICS.VENDOR_STATUS_CHANGED,
@@ -137,7 +136,7 @@ export class VendorOrderService {
           const txDb = tx as unknown as Db;
           const txOrderRepo = new OrderRepo(txDb);
 
-          await txOrderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'VENDOR_ORDER_PENDING');
+          await txOrderRepo.updateStatus(orderId, 'VENDOR_ORDER_PLACING', 'VENDOR_ORDER_PENDING');
           await txOrderRepo.updateVendorOrder(orderId, { vendorOrderId: result.vendorOrderId });
         });
         break;
@@ -145,7 +144,7 @@ export class VendorOrderService {
 
       case 'ERROR': {
         if (result.retryable) {
-          // Leave status as-is; outbox poller will retry via order.payment_authorized event.
+          await this.orderRepo.updateStatus(orderId, 'VENDOR_ORDER_PLACING', 'PAYMENT_AUTHORIZED');
           console.warn('[VendorOrderService] retryable error from vendor', { orderId, error: result.error });
         } else {
           // Non-retryable: atomically fail the order + payment status and schedule the hold release.
@@ -154,7 +153,7 @@ export class VendorOrderService {
             const txDb = tx as unknown as Db;
             const txOrderRepo = new OrderRepo(txDb);
 
-            await txOrderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'FAILED');
+            await txOrderRepo.updateStatus(orderId, 'VENDOR_ORDER_PLACING', 'FAILED');
             await txOrderRepo.setPaymentStatus(orderId, 'CANCELLED');
             if (order.paymentProviderPaymentId) {
               await new OutboxRepo(txDb).create({

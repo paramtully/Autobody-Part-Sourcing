@@ -203,6 +203,7 @@ export const orderStatusEnum = pgEnum('order_status', [
     'DRAFT',
     'PENDING_PAYMENT',
     'PAYMENT_AUTHORIZED',
+    'VENDOR_ORDER_PLACING',
     'VENDOR_ORDER_PENDING',
     'VENDOR_CONFIRMED',
     'COMPLETED',
