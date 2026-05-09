@@ -1,6 +1,7 @@
 import { asc, and, isNull, lt, eq, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { outboxEvents } from '../models';
+import { db } from '../client';
 
 export type OutboxEventRow = typeof outboxEvents.$inferSelect;
 export type OutboxEventInsert = typeof outboxEvents.$inferInsert;
@@ -15,7 +16,10 @@ export type CreateOutboxEventInput = Pick<
 const OUTBOX_MAX_RETRIES = 5;
 
 export class OutboxRepo {
-  constructor(private readonly db: Db) {}
+  private readonly db: Db;
+  constructor(private readonly database: Db = db) {
+    this.db = database;
+  }
 
   async create(input: CreateOutboxEventInput): Promise<OutboxEventRow> {
     const [row] = await this.db.insert(outboxEvents).values(input).returning();

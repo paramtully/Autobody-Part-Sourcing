@@ -1,10 +1,13 @@
-import type { ListingRepo } from '../../db/schema/listing.repository';
-import type { OrderRepo, QuoteRow } from '@repo/db/repositories/order.repository';
-import type { QuoteRepo } from '@repo/db/repositories/order.repository';
-import type { OutboxRepo } from '@repo/db/repositories/outbox.repository';
-import type { VendorOrderClientRegistry } from '../clients/registry';
-import type { ShippingAddress } from '../clients/vendorOrderClient';
-import type { PaymentProviderAdapter, CreatePaymentResult } from '../payment/paymentProvider';
+import { ListingRepo } from '@repo/db/repositories/listing.repository';
+import { OrderRepo, QuoteRepo } from '@repo/db/repositories/order.repository';
+import { OutboxRepo } from '@repo/db/repositories/outbox.repository';
+import { ORDER_TOPICS } from '../events/topics';
+import { VendorOrderClientRegistry } from '../clients/registry';
+import type { OrderQuoteResult, ShippingAddress } from '../clients/vendorOrderClient';
+import { PaymentProviderAdapter, CreatePaymentResult } from '../payment/paymentProvider';
+import { StripePaymentAdapter } from '@repo/ordering/payment';
+import { ConfirmBody, QuoteBody } from '@repo/db/schema/order.schema';
+import { Db, db } from '@repo/db/client';
 
 // ── Response DTOs ─────────────────────────────────────────────────────────────
 
@@ -31,16 +34,13 @@ export interface CheckoutConfirmResponse {
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export class CheckoutService {
-  constructor(
-    private readonly listingRepo: ListingRepo,
-    private readonly quoteRepo: QuoteRepo,
-    private readonly orderRepo: OrderRepo,
-    private readonly outboxRepo: OutboxRepo,
-    private readonly vendorRegistry: VendorOrderClientRegistry,
-    private readonly paymentProvider: PaymentProviderAdapter,
-    private readonly feePercent: number,
-    private readonly quoteTtlMinutes: number = 15,
-  ) {}
+  private readonly listingRepo: ListingRepo = new ListingRepo();
+  private readonly quoteRepo: QuoteRepo = new QuoteRepo();
+  private readonly orderRepo: OrderRepo = new OrderRepo();
+  private readonly vendorRegistry: VendorOrderClientRegistry = new VendorOrderClientRegistry();
+  private readonly paymentProvider: PaymentProviderAdapter = new StripePaymentAdapter();
+  private readonly feePercent: number = parseFloat(process.env['PLATFORM_FEE_PERCENT'] ?? '0.02');
+  private readonly quoteTtlMinutes: number = 15;
 
   /**
    * Create a checkout quote.
@@ -53,10 +53,7 @@ export class CheckoutService {
    * EMAIL_MANUAL vendors are blocked — their confirmation latency exceeds the 7-day
    * Stripe authorization hold window.
    */
-  async createQuote(input: {
-    listingId: string;
-    shippingAddress: ShippingAddress;
-  }): Promise<CheckoutQuoteResponse> {
+  async createQuote(input: QuoteBody): Promise<CheckoutQuoteResponse> {
     const listing = await this.listingRepo.findById(input.listingId);
     if (!listing) throw new NotFoundError(`Listing ${input.listingId} not found`);
     if (!listing.isActive) throw new CheckoutError('This listing is no longer available');
@@ -67,7 +64,8 @@ export class CheckoutService {
     }
 
     const client = this.vendorRegistry.get(listing.vendorId);
-    const vq = await client.getQuote({
+
+    const vq: OrderQuoteResult = await client.getQuote({
       listingId: listing.id,
       vendorId: listing.vendorId,
       partNumber: listing.partIdentifier.value,
@@ -76,7 +74,7 @@ export class CheckoutService {
     });
 
     const serviceFeeMinor = Math.round(this.feePercent * (vq.itemPriceMinor + vq.shippingMinor));
-    // pre-tax subtotal stored on the quote (Stripe computes final tax at confirm)
+    // pre-tax subtotal stored on the quote (Payment Provider computes final tax at confirm)
     const subtotalMinor = vq.itemPriceMinor + vq.shippingMinor + serviceFeeMinor;
 
     const row = await this.quoteRepo.create({
@@ -99,7 +97,7 @@ export class CheckoutService {
       serviceFeeMinor: row.serviceFeeMinor,
       currency: row.currency,
       expiresAt: row.expiresAt.toISOString(),
-    };
+    } as CheckoutQuoteResponse;
   }
 
   /**
@@ -112,12 +110,7 @@ export class CheckoutService {
    *
    * Pricing is read entirely from the DB quote row — client input carries no amounts.
    */
-  async confirm(input: {
-    quoteId: string;
-    contactEmail: string;
-    contactPhone?: string;
-    idempotencyKey: string;
-  }): Promise<CheckoutConfirmResponse> {
+  async confirm(input: ConfirmBody): Promise<CheckoutConfirmResponse> {
     const quote = await this.quoteRepo.findById(input.quoteId);
     if (!quote) throw new QuoteExpiredError('Quote not found or already used');
     if (new Date() > quote.expiresAt) {
@@ -138,31 +131,38 @@ export class CheckoutService {
     const listing = await this.listingRepo.findById(quote.listingId);
     if (!listing) throw new CheckoutError('Listing no longer available');
 
-    // Create the order row (DRAFT) and delete the quote in a single step.
-    const order = await this.orderRepo.create({
-      status: 'DRAFT',
-      contactEmail: input.contactEmail,
-      contactPhone: input.contactPhone,
-      idempotencyKey: input.idempotencyKey,
-      listingId: quote.listingId,
-      vendorId: listing.vendorId,
-      shippingAddress: quote.shippingAddress,
-      partPriceMinor: quote.partPriceMinor,
-      serviceFeeMinor: quote.serviceFeeMinor,
-      shippingMinor: quote.shippingMinor,
-      taxMinor: quote.taxMinor,
-      totalMinor: quote.totalMinor,
-      currency: quote.currency,
-    });
+    // do transactions together to assure atomicity
+    const order = await db.transaction(async (tx) => {
+      const txDb = tx as unknown as Db;
 
-    // Delete quote on consume — absence is the "used" signal.
-    await this.quoteRepo.delete(quote.id);
+      // Create the order row (DRAFT) and delete the quote in a single step.
+      const orderRow = await new OrderRepo(txDb).create({
+        status: 'DRAFT',
+        contactEmail: input.contactEmail,
+        contactPhone: input.contactPhone,
+        idempotencyKey: input.idempotencyKey,
+        listingId: quote.listingId,
+        vendorId: listing.vendorId,
+        shippingAddress: quote.shippingAddress,
+        partPriceMinor: quote.partPriceMinor,
+        serviceFeeMinor: quote.serviceFeeMinor,
+        shippingMinor: quote.shippingMinor,
+        taxMinor: quote.taxMinor,
+        totalMinor: quote.totalMinor,
+        currency: quote.currency,
+      });
 
-    // Write outbox event for order created.
-    await this.outboxRepo.create({
-      topic: 'order.created',
-      aggregateId: order.id,
-      payload: { orderId: order.id },
+      // Delete quote on consume — absence is the "used" signal.
+      await new QuoteRepo(txDb).delete(quote.id);
+
+      // Write outbox event for order created.
+      await new OutboxRepo(txDb).create({
+        topic: ORDER_TOPICS.CREATED,
+        aggregateId: orderRow.id,
+        payload: { orderId: orderRow.id },
+      });
+
+      return orderRow;
     });
 
     let paymentResult: CreatePaymentResult;
@@ -186,16 +186,24 @@ export class CheckoutService {
       throw err;
     }
 
-    // Store provider payment id and update status to PENDING_PAYMENT.
-    await this.orderRepo.setStripePayment(order.id, paymentResult.providerPaymentId);
-    await this.orderRepo.updateStatus(order.id, 'DRAFT', 'PENDING_PAYMENT');
+    // After paymentResult resolves...
+    await db.transaction(async (tx) => {
+      const txDb = tx as unknown as Db;
+      const repo = new OrderRepo(txDb);
 
-    // Update the order's taxMinor and totalMinor with Stripe-computed values.
-    await this.orderRepo.setTaxAndTotal(
-      order.id,
-      paymentResult.taxMinor,
-      paymentResult.totalMinor,
-    );
+      // Store provider payment id and update status to PENDING_PAYMENT.
+      await repo.setStripePayment(order.id, paymentResult.providerPaymentId);
+      await repo.updateStatus(order.id, 'DRAFT', 'PENDING_PAYMENT');
+
+      // Update the order's taxMinor and totalMinor with Stripe-computed values.
+      await repo.setTaxAndTotal(order.id, paymentResult.taxMinor, paymentResult.totalMinor);
+
+      await new OutboxRepo(txDb).create({
+        topic: ORDER_TOPICS.PENDING_PAYMENT,
+        aggregateId: order.id,
+        payload: { orderId: order.id, paymentProviderPaymentId: paymentResult.providerPaymentId },
+      });
+    });
 
     return {
       orderId: order.id,

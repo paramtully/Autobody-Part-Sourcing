@@ -17,7 +17,7 @@ export interface OrderQuoteRequest {
   vendorId: string;
   partNumber: string;
   shippingAddress: ShippingAddress;
-  currency: typeof currencyEnum.enumValues;
+  currency: typeof currencyEnum.enumValues[number];
 }
 
 /**

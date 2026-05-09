@@ -1,7 +1,7 @@
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Db } from '../client';
-import { ingestionRuns } from '.';
+import { ingestionRuns } from '../models/ingestion';
 
 // ── Types ────────────────────────────────────────────────────────
 

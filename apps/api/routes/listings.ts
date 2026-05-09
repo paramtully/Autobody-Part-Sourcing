@@ -1,8 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import { db, listingImages, partFitments } from '@repo/db';
-import { listings, partIdentifiers, parts, fitments } from '@repo/db/models';
+import { listings, partIdentifiers, parts, fitments } from '@repo/db/schemas';
 import { eq, inArray, and, gt, asc } from 'drizzle-orm';
-import { fitmentSchema } from '@repo/db/schema/fitment.schema';
+import { fitmentSchema } from '@repo/db/schemas';
 
 const router = express.Router();
 const PAGE_SIZE = 50;
@@ -168,4 +168,6 @@ router.get('/images/:listingId', (req: Request, res: Response) => {
     });
     
 });
+
+export default router;
 

@@ -10,3 +10,4 @@ export type {
   PaymentWebhookEvent,
 } from './paymentProvider';
 export { PaymentDeclinedError, PaymentInvalidRequestError, PaymentProviderError } from './paymentError';
+export { StripePaymentAdapter } from './paymentProvider.stripe';

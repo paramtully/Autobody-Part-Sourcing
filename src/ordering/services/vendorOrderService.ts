@@ -1,9 +1,12 @@
-import type { OrderRepo } from '@repo/db/repositories/order.repository';
-import type { OutboxRepo } from '@repo/db/repositories/outbox.repository';
-import type { VendorOrderClientRegistry } from '../clients/registry';
-import type { VendorOrderRequest, VendorOrderResult } from '../clients/vendorOrderClient';
-import type { PaymentProviderAdapter } from '../payment/paymentProvider';
+import { OrderRepo } from '@repo/db/repositories/order.repository';
+import { OutboxRepo } from '@repo/db/repositories/outbox.repository';
+import { Db, db } from '@repo/db';
+import { ORDER_TOPICS } from '../events/topics';
+import { VendorOrderClientRegistry } from '../clients/registry';
+import { VendorOrderRequest, VendorOrderResult } from '../clients/vendorOrderClient';
+import { PaymentProviderAdapter } from '../payment/paymentProvider';
 import { PaymentProviderError } from '../payment/paymentError';
+import { StripePaymentAdapter } from '../payment/paymentProvider.stripe';
 
 /**
  * Dispatches vendor order placement and handles the result.
@@ -15,12 +18,10 @@ import { PaymentProviderError } from '../payment/paymentError';
  *   PENDING   → orders.status = VENDOR_ORDER_PENDING (vendor webhook / email callback later)
  */
 export class VendorOrderService {
-  constructor(
-    private readonly vendorRegistry: VendorOrderClientRegistry,
-    private readonly orderRepo: OrderRepo,
-    private readonly outboxRepo: OutboxRepo,
-    private readonly paymentProvider: PaymentProviderAdapter,
-  ) {}
+  private readonly vendorRegistry: VendorOrderClientRegistry = new VendorOrderClientRegistry();
+  private readonly orderRepo: OrderRepo = new OrderRepo();
+  private readonly outboxRepo: OutboxRepo = new OutboxRepo();
+  private readonly paymentProvider: PaymentProviderAdapter = new StripePaymentAdapter();
 
   /**
    * Place a vendor order for an order in PAYMENT_AUTHORIZED status.
@@ -69,18 +70,22 @@ export class VendorOrderService {
 
     switch (result.status) {
       case 'CONFIRMED': {
-        // Optimistic status transition — only proceeds if still PAYMENT_AUTHORIZED.
-        const updated = await this.orderRepo.updateStatus(
-          orderId,
-          'PAYMENT_AUTHORIZED',
-          'VENDOR_CONFIRMED',
-        );
-        if (!updated) {
-          // Already transitioned (replay); still try to capture idempotently.
-        }
+        // Atomically transition status, record vendorOrderId, and publish outbox event.
+        // updateStatus is optimistic — returns null if already past PAYMENT_AUTHORIZED (replay).
+        // updateVendorOrder runs unconditionally; on replay it's a harmless same-value write.
+        await db.transaction(async (tx) => {
+          const txDb = tx as unknown as Db;
 
-        await this.orderRepo.updateVendorOrder(orderId, {
-          vendorOrderId: result.vendorOrderId,
+          const updated = await new OrderRepo(txDb).updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'VENDOR_CONFIRMED');
+          await new OrderRepo(txDb).updateVendorOrder(orderId, { vendorOrderId: result.vendorOrderId });
+
+          if (updated) {
+            await new OutboxRepo(txDb).create({
+              topic: ORDER_TOPICS.VENDOR_STATUS_CHANGED,
+              aggregateId: orderId,
+              payload: { orderId, status: 'CONFIRMED', vendorOrderId: result.vendorOrderId },
+            });
+          }
         });
 
         if (!order.paymentProviderPaymentId) {
@@ -88,6 +93,7 @@ export class VendorOrderService {
           return;
         }
 
+        // capturePayment is called after the transaction commits. It is idempotent on replay.
         try {
           await this.paymentProvider.capturePayment(order.paymentProviderPaymentId);
         } catch (err) {
@@ -102,30 +108,37 @@ export class VendorOrderService {
       }
 
       case 'REJECTED': {
-        await this.orderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'CANCELLED');
-        await this.orderRepo.setPaymentStatus(orderId, 'CANCELLED');
+        // Atomically cancel order status, payment status, and schedule the hold release.
+        // PAYMENT_CANCEL_REQUIRED is picked up by the outbox poller and retried up to 5x.
+        await db.transaction(async (tx) => {
+          const txDb = tx as unknown as Db;
+          const txOutbox = new OutboxRepo(txDb);
 
-        if (order.paymentProviderPaymentId) {
-          try {
-            await this.paymentProvider.cancelPayment(order.paymentProviderPaymentId);
-          } catch (err) {
-            // cancelPayment is idempotent by design, but log unexpected errors.
-            console.error('[VendorOrderService] cancelPayment error', { orderId, err });
+          await new OrderRepo(txDb).updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'CANCELLED');
+          await new OrderRepo(txDb).setPaymentStatus(orderId, 'CANCELLED');
+          await txOutbox.create({
+            topic: ORDER_TOPICS.VENDOR_STATUS_CHANGED,
+            aggregateId: orderId,
+            payload: { orderId, status: 'REJECTED', reason: result.reason },
+          });
+          if (order.paymentProviderPaymentId) {
+            await txOutbox.create({
+              topic: ORDER_TOPICS.PAYMENT_CANCEL_REQUIRED,
+              aggregateId: orderId,
+              payload: { orderId, providerPaymentId: order.paymentProviderPaymentId },
+            });
           }
-        }
-
-        await this.outboxRepo.create({
-          topic: 'order.vendor_status_changed',
-          aggregateId: orderId,
-          payload: { orderId, status: 'REJECTED', reason: result.reason },
         });
         break;
       }
 
       case 'PENDING': {
-        await this.orderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'VENDOR_ORDER_PENDING');
-        await this.orderRepo.updateVendorOrder(orderId, {
-          vendorOrderId: result.vendorOrderId,
+        await db.transaction(async (tx) => {
+          const txDb = tx as unknown as Db;
+          const txOrderRepo = new OrderRepo(txDb);
+
+          await txOrderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'VENDOR_ORDER_PENDING');
+          await txOrderRepo.updateVendorOrder(orderId, { vendorOrderId: result.vendorOrderId });
         });
         break;
       }
@@ -135,13 +148,22 @@ export class VendorOrderService {
           // Leave status as-is; outbox poller will retry via order.payment_authorized event.
           console.warn('[VendorOrderService] retryable error from vendor', { orderId, error: result.error });
         } else {
-          // Non-retryable: cancel the payment authorization and fail the order.
-          await this.orderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'FAILED');
-          if (order.paymentProviderPaymentId) {
-            await this.paymentProvider.cancelPayment(order.paymentProviderPaymentId).catch((e) => {
-              console.error('[VendorOrderService] cancelPayment on non-retryable error', { orderId, e });
-            });
-          }
+          // Non-retryable: atomically fail the order + payment status and schedule the hold release.
+          // PAYMENT_CANCEL_REQUIRED is picked up by the outbox poller and retried up to 5x.
+          await db.transaction(async (tx) => {
+            const txDb = tx as unknown as Db;
+            const txOrderRepo = new OrderRepo(txDb);
+
+            await txOrderRepo.updateStatus(orderId, 'PAYMENT_AUTHORIZED', 'FAILED');
+            await txOrderRepo.setPaymentStatus(orderId, 'CANCELLED');
+            if (order.paymentProviderPaymentId) {
+              await new OutboxRepo(txDb).create({
+                topic: ORDER_TOPICS.PAYMENT_CANCEL_REQUIRED,
+                aggregateId: orderId,
+                payload: { orderId, providerPaymentId: order.paymentProviderPaymentId },
+              });
+            }
+          });
         }
         break;
       }

@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@repo/db": ["../../src/db/index.ts"],
+      "@repo/ordering": ["../../src/ordering/index.ts"],
+      "@repo/ordering/stripe": ["../../src/ordering/payment/paymentProvider.stripe.ts"]
+    },
+
+    "module": "nodenext",
+    "target": "esnext",
+    "types": ["node"],
+
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  },
+  "references": [
+    { "path": "../../src/db" },
+    { "path": "../../src/ordering" }
+  ]
+}

@@ -33,9 +33,16 @@ export class StripePaymentAdapter implements PaymentProviderAdapter {
   private readonly stripe: StripeClient;
   private readonly webhookSecret: string;
 
-  constructor(stripeClient: StripeClient, webhookSecret: string) {
-    this.stripe = stripeClient;
-    this.webhookSecret = webhookSecret;
+  constructor() {
+    const stripeSecretKey = process.env['STRIPE_SECRET_KEY'];
+    const stripeWebhookSecret = process.env['STRIPE_WEBHOOK_SECRET'];
+
+    if (!stripeSecretKey || !stripeWebhookSecret) {
+      throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET env vars are required');
+    }
+
+    this.stripe = new Stripe(stripeSecretKey);
+    this.webhookSecret = stripeWebhookSecret;
   }
 
   async createPayment(input: CreatePaymentInput): Promise<CreatePaymentResult> {

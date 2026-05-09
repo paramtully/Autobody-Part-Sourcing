@@ -1,6 +1,6 @@
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
-import type { Db } from '../client';
+import { Db, db } from '../client';
 import { orders, checkoutQuotes } from '../models';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -13,7 +13,11 @@ export type QuoteInsert = typeof checkoutQuotes.$inferInsert;
 // ── Order Repository ──────────────────────────────────────────────
 
 export class OrderRepo {
-  constructor(private readonly db: Db) {}
+  private readonly db: Db;
+
+  constructor(database: Db = db) {
+    this.db = database;
+  }
 
   async create(
     input: Omit<OrderInsert, 'id' | 'orderNumber' | 'orderLookupToken' | 'createdAt' | 'updatedAt'>,
@@ -143,7 +147,11 @@ export class OrderRepo {
 // ── Quote Repository ──────────────────────────────────────────────
 
 export class QuoteRepo {
-  constructor(private readonly db: Db) {}
+  private readonly db: Db;
+
+  constructor(database: Db = db) {
+    this.db = database;
+  }
 
   async create(input: Omit<QuoteInsert, 'id' | 'createdAt'>): Promise<QuoteRow> {
     const [row] = await this.db.insert(checkoutQuotes).values(input).returning();

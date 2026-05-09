@@ -7,71 +7,70 @@
  */
 import express, { type Request, type Response, type Router } from 'express';
 import type { PaymentProviderAdapter } from '@repo/ordering';
-import type { PaymentService } from '@repo/ordering';
+import { PaymentService } from '@repo/ordering';
+import { StripePaymentAdapter } from '@repo/ordering/stripe';
 
-export function paymentWebhookRouter(
-  paymentProvider: PaymentProviderAdapter,
-  paymentService: PaymentService,
-): Router {
-  const router = express.Router();
+const router = express.Router();
 
-  // express.raw must be applied before json() — this router is mounted before
-  // app.use(express.json()) in server.ts so that raw body is preserved.
-  router.use(express.raw({ type: 'application/json' }));
+// express.raw must be applied before json() — this router is mounted before
+// app.use(express.json()) in server.ts so that raw body is preserved.
+router.use(express.raw({ type: 'application/json' }));
 
-  router.post('/:providerId', async (req: Request, res: Response) => {
-    const { providerId } = req.params as { providerId: string };
+const paymentProvider: PaymentProviderAdapter = new StripePaymentAdapter();
+const paymentService: PaymentService = new PaymentService();
 
-    if (providerId !== paymentProvider.providerId) {
-      res.status(404).json({ error: 'Unknown payment provider' });
-      return;
+router.post('/:providerId', async (req: Request, res: Response) => {
+  const { providerId } = req.params as { providerId: string };
+
+  if (providerId !== paymentProvider.providerId) {
+    res.status(404).json({ error: 'Unknown payment provider' });
+    return;
+  }
+
+  const rawBody = req.body as Buffer;
+  const headers = Object.fromEntries(
+    Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] ?? '' : v ?? '']),
+  );
+
+  const event = paymentProvider.verifyAndParseWebhook(rawBody, headers);
+  if (event === null) {
+    res.status(401).json({ error: 'Invalid webhook signature' });
+    return;
+  }
+
+  try {
+    switch (event.type) {
+      case 'PAYMENT_AUTHORIZED':
+        await paymentService.onPaymentAuthorized(event.providerPaymentId);
+        break;
+
+      case 'PAYMENT_CAPTURED':
+        await paymentService.onPaymentCaptured(event.providerPaymentId, paymentProvider);
+        break;
+
+      case 'PAYMENT_FAILED':
+        await paymentService.onPaymentFailed(event.providerPaymentId, event.reason);
+        break;
+
+      case 'REFUND_SUCCEEDED':
+        await paymentService.onRefundSucceeded(
+          event.providerPaymentId,
+          event.providerRefundId,
+          event.amountMinor,
+        );
+        break;
+
+      case 'UNHANDLED':
+        // Acknowledge unknown event types so the provider stops retrying.
+        break;
     }
 
-    const rawBody = req.body as Buffer;
-    const headers = Object.fromEntries(
-      Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] ?? '' : v ?? '']),
-    );
+    res.status(200).json({ received: true });
+  } catch (err) {
+    console.error('[paymentWebhook] handler error', { eventType: event.type, err });
+    // Return 500 so the provider retries delivery.
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
 
-    const event = paymentProvider.verifyAndParseWebhook(rawBody, headers);
-    if (event === null) {
-      res.status(401).json({ error: 'Invalid webhook signature' });
-      return;
-    }
-
-    try {
-      switch (event.type) {
-        case 'PAYMENT_AUTHORIZED':
-          await paymentService.onPaymentAuthorized(event.providerPaymentId);
-          break;
-
-        case 'PAYMENT_CAPTURED':
-          await paymentService.onPaymentCaptured(event.providerPaymentId, paymentProvider);
-          break;
-
-        case 'PAYMENT_FAILED':
-          await paymentService.onPaymentFailed(event.providerPaymentId, event.reason);
-          break;
-
-        case 'REFUND_SUCCEEDED':
-          await paymentService.onRefundSucceeded(
-            event.providerPaymentId,
-            event.providerRefundId,
-            event.amountMinor,
-          );
-          break;
-
-        case 'UNHANDLED':
-          // Acknowledge unknown event types so the provider stops retrying.
-          break;
-      }
-
-      res.status(200).json({ received: true });
-    } catch (err) {
-      console.error('[paymentWebhook] handler error', { eventType: event.type, err });
-      // Return 500 so the provider retries delivery.
-      res.status(500).json({ error: 'Webhook processing failed' });
-    }
-  });
-
-  return router;
-}
+export default router;
