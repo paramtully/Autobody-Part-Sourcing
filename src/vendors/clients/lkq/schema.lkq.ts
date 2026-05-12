@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // ── Schema ────────────────────────────────────────────────────────
 
-const lkqListingSchema = z.object({
+export const lkqListingSchema = z.object({
   // At least one identity field (checked in refine below)
   id: z.string().optional(),
   stockNumber: z.string().optional(),

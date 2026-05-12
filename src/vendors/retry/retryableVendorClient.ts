@@ -6,7 +6,7 @@
  */
 
 import { VendorError } from "../clients/vendorError";
-import { VendorClient } from "../clients/vendorInventoryClient";
+import { VendorInventoryClient } from "../clients/vendorInventoryClient";
 import { UnknownRawVendorRecord, VendorRecord } from "../clients/vendorRecord";
 
 export interface RetryOptions {
@@ -23,13 +23,13 @@ export interface RetryOptions {
  * and a retryable one. This is the "transparent proxy" pattern.
  */
 
-export class RetryableVendorClient implements VendorClient {
+export class RetryableVendorClient implements VendorInventoryClient {
     readonly vendorId: string;
-    private readonly inner: VendorClient;
+    private readonly inner: VendorInventoryClient;
     readonly options: RetryOptions;
 
 
-    constructor(client: VendorClient, options: RetryOptions) {
+    constructor(client: VendorInventoryClient, options: RetryOptions) {
         this.vendorId = client.vendorId;
         this.inner = client;
         this.options = options;

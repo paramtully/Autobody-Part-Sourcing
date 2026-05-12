@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Db } from '../client';
 import { ingestionRuns } from '../models/ingestion';
@@ -28,6 +28,16 @@ export class IngestionRunRepo {
       .where(
         and(eq(ingestionRuns.vendorId, vendorId), eq(ingestionRuns.status, 'IN_PROGRESS')),
       );
+    return row ?? null;
+  }
+
+  async findLatest(vendorId: string): Promise<IngestionRunRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.vendorId, vendorId))
+      .orderBy(desc(ingestionRuns.startedAt))
+      .limit(1);
     return row ?? null;
   }
 

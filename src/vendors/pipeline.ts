@@ -1,5 +1,6 @@
 import { VendorInventoryClient } from './clients/vendorInventoryClient';
 import DrizzleRecordProcessor, { BatchResult } from './recordProcessor/recordProcessor';
+import { RetryableVendorClient } from './retry/retryableVendorClient';
 
 export interface PageResult {
     result: BatchResult;
@@ -11,7 +12,13 @@ export class VendorPipeline {
     constructor(
         private readonly client: VendorInventoryClient,
         private readonly processor: DrizzleRecordProcessor,
-    ) {}
+    ) {
+        this.client = new RetryableVendorClient(client, {
+            maxAttempts: 3,
+            baseDelay: 1000,
+            maxDelay: 30000,
+        });
+    }
 
     async processPage(cursor?: string): Promise<PageResult> {
         if (!this.client.fetchInventoryPage) {

@@ -1,6 +1,0 @@
-{
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.mock-ccc-one-token-for-testing",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "scope": "parts:read estimates:read"
-}

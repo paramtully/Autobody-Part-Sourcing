@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "apps/*",
+    "apps/workers/*",
     "src/db",
     "src/vendors",
     "src/ordering"

@@ -1,6 +1,7 @@
 import { createHmac } from "crypto";
-import { UnknownRawVendorRecord, VendorInventoryClient } from "../vendorInventoryClient";
-import { lkqPageSchema } from "./schema.lkq";
+import { VendorInventoryClient } from "../vendorInventoryClient";
+import { UnknownRawVendorRecord, VendorRecord, PartCondition, AvailabilityStatus } from "../vendorRecord";
+import { lkqPageSchema, lkqListingSchema, mapLkqCondition, mapLkqAvailability } from "./schema.lkq";
 import { VendorError, VendorErrorType } from "../vendorError";
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -84,6 +85,51 @@ export class LKQVendorClient implements VendorInventoryClient {
             records: parsed.data.listings as UnknownRawVendorRecord[],
             nextCursor: parsed.data.nextCursor,
             hasMore: parsed.data.hasMore,
+        };
+    }
+
+    mapRecord(raw: UnknownRawVendorRecord): VendorRecord {
+        const parsed = lkqListingSchema.safeParse(raw);
+        if (!parsed.success) {
+            throw new VendorError('VALIDATION_ERROR', `LKQ record validation failed: ${parsed.error.message}`, this.config.retryAfterMs, parsed.error);
+        }
+        const d = parsed.data;
+
+        const externalId = d.id ?? d.stockNumber ?? d.url ?? d.sourceUrl ?? '';
+        const priceMinorMin = d.priceMin != null ? Math.round(d.priceMin * 100)
+            : d.price != null ? Math.round(d.price * 100) : 0;
+        const priceMinorMax = d.priceMax != null ? Math.round(d.priceMax * 100) : undefined;
+
+        const identifiers: VendorRecord['identifiers'] = [];
+        if (d.oemPartNumber) identifiers.push({ type: 'OEM', value: d.oemPartNumber });
+        if (d.partNumber) identifiers.push({ type: 'AFTERMARKET', value: d.partNumber });
+        if (d.hollanderNumber) identifiers.push({ type: 'INTERCHANGE', value: d.hollanderNumber });
+        if (identifiers.length === 0) identifiers.push({ type: 'INTERCHANGE', value: externalId });
+
+        const fitments: VendorRecord['fitments'] = (d.make && d.model && d.year)
+            ? [{ make: d.make, model: d.model, year: d.year, trim: d.trim }]
+            : [];
+
+        return {
+            part: { name: d.description ?? externalId, category: 'OTHER' },
+            identifiers,
+            fitments,
+            listing: {
+                vendorListingExternalId: externalId,
+                sourceUrl: d.sourceUrl ?? d.url,
+                condition: mapLkqCondition(d.partGrade, d.condition) as PartCondition,
+                description: d.description ?? undefined,
+                quantityAvailable: d.quantity ?? undefined,
+                availabilityStatus: mapLkqAvailability(d.availability, d.quantity ?? undefined) as AvailabilityStatus,
+                priceMinorMin,
+                priceMinorMax,
+                currency: d.currency ?? 'USD',
+                sourceVehicleVin: d.vehicleVin,
+                sourceMileage: d.mileage ?? undefined,
+                sourceDamageType: d.damageType,
+                estimatedShipTimeHours: d.estimatedShipTimeHours ?? undefined,
+                images: d.images?.map(img => ({ url: img.url, type: img.type })) ?? undefined,
+            },
         };
     }
 

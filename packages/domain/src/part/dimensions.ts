@@ -1,5 +1,0 @@
-export default interface Dimensions {
-    lengthMM: number;
-    widthMM: number;
-    heightMM: number;
-}
