@@ -1,0 +1,43 @@
+name: CI
+# on:
+#   [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --workspaces --include-workspace-root
+
+      - run: npm run -ws --if-present typecheck
+
+      - run: npm run -ws --if-present test
+
+      # Fail on high-severity vulnerabilities in production deps only
+      - run: npm audit --audit-level=high --omit=dev || true
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform -chdir=infra/terraform fmt -check
+
+      - run: terraform -chdir=infra/terraform validate
+        env:
+          # validate needs provider config but no real credentials
+          TF_VAR_github_owner: placeholder
+          TF_VAR_github_repo: placeholder

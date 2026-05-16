@@ -18,9 +18,10 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
     const vendorId = process.env['VENDOR_ID'];
     if (!vendorId || !CLIENTS[vendorId]) throw new Error(`VENDOR_ID env must be one of: ${Object.keys(CLIENTS).join(', ')}`);
 
-    const intervalMs = Number(process.env['INGEST_INTERVAL_MS'] ?? 3_600_000);
-    const safetyMs = 30_000;
-    const deadlineAt = Date.now() + (ctx?.getRemainingTimeInMillis?.() ?? 12 * 60_000) - safetyMs;
+    // default to 180 minute ingestion interval, with 3 minute safety margin and 12 minute Lambda timeout
+    const intervalMs = Number(process.env['INGEST_INTERVAL_MS'] ?? 180 * 60 * 1000);
+    const safetyMs = 3 * 60 * 1000;
+    const deadlineAt = Date.now() + (ctx?.getRemainingTimeInMillis?.() ?? 12 * 60 * 1000) - safetyMs;
 
     // confirm vendor row exists in DB before doing any work (catches client/DB slug mismatch early)
     const vendorRow = await new VendorRepo(db).findById(vendorId);

@@ -9,6 +9,7 @@ import express, { type Request, type Response, type Router } from 'express';
 import type { PaymentProviderAdapter } from '@repo/ordering';
 import { PaymentService } from '@repo/ordering';
 import { StripePaymentAdapter } from '@repo/ordering/stripe';
+import { ringOutboxDoorbell } from '../lib/outboxDoorbell.js';
 
 const router = express.Router();
 
@@ -42,6 +43,9 @@ router.post('/:providerId', async (req: Request, res: Response) => {
     switch (event.type) {
       case 'PAYMENT_AUTHORIZED':
         await paymentService.onPaymentAuthorized(event.providerPaymentId);
+        // Ring the SQS doorbell after the DB transaction commits so the
+        // paymentWorker drains the outbox row immediately.
+        void ringOutboxDoorbell();
         break;
 
       case 'PAYMENT_CAPTURED':

@@ -1,0 +1,164 @@
+name: Deploy
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  push:
+    branches: 
+      - main
+
+# Prevent concurrent deploys; never cancel an in-flight deploy
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # required for OIDC -> AWS
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  TF_VAR_aws_region: us-west-2
+  TF_VAR_github_owner: ${{ github.repository_owner }}
+  TF_VAR_github_repo: ${{ github.event.repository.name }}
+
+jobs:
+  # ── 1. Apply Terraform infra ───────────────────────────────────────────────
+  terraform:
+    name: Terraform apply
+    # Only deploy if CI succeeded on main
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      listing_fns: ${{ steps.tf.outputs.listing_fns }}
+      payment_fn: ${{ steps.tf.outputs.payment_fn }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform -chdir=infra/terraform init
+
+      - run: terraform -chdir=infra/terraform apply -auto-approve
+
+      - id: tf
+        run: |
+          echo "listing_fns=$(terraform -chdir=infra/terraform output -json listing_fn_names)" >> "$GITHUB_OUTPUT"
+          echo "payment_fn=$(terraform -chdir=infra/terraform output -raw payment_fn_name)" >> "$GITHUB_OUTPUT"
+
+  # ── 2a. Build & publish Lambda code ──────────────────────────────────────
+  lambdas:
+    name: Deploy Lambdas
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --workspaces --include-workspace-root
+
+      # Build both workers (esbuild + zip)
+      - run: node apps/workers/build.mjs listingWorker
+      - run: node apps/workers/build.mjs paymentWorker
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Push listingWorker zip to every per-vendor Lambda
+        env:
+          LISTING_FNS: ${{ needs.terraform.outputs.listing_fns }}
+        run: |
+          for fn in $(echo "$LISTING_FNS" | jq -r '.[]'); do
+            aws lambda update-function-code \
+              --function-name "$fn" \
+              --zip-file fileb://apps/workers/dist/listingWorker.zip \
+              --publish
+          done
+
+      - name: Push paymentWorker zip
+        env:
+          PAYMENT_FN: ${{ needs.terraform.outputs.payment_fn }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "$PAYMENT_FN" \
+            --zip-file fileb://apps/workers/dist/paymentWorker.zip \
+            --publish
+
+  # ── 2b. Deploy to Vercel ──────────────────────────────────────────────────
+  vercel:
+    name: Deploy ${{ matrix.app }} to Vercel
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      matrix:
+        include:
+          - app: api
+            project_id_secret: VERCEL_PROJECT_ID_API
+          - app: client
+            project_id_secret: VERCEL_PROJECT_ID_CLIENT
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install -g vercel@latest
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/${{ matrix.app }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/${{ matrix.app }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+
+      - name: Deploy prebuilt
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/${{ matrix.app }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project_id_secret] }}
+
+  # ── 2c. Run DB migrations ─────────────────────────────────────────────────
+  migrate:
+    name: DB migrations
+    needs: terraform
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --workspaces --include-workspace-root
+
+      - run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}

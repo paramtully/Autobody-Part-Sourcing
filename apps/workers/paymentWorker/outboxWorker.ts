@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import type { SQSEvent } from 'aws-lambda';
 import { db, OutboxRepo } from '@repo/db';
 import {
   InProcessEventPublisher,
@@ -26,7 +27,9 @@ eventPublisher.on(ORDER_TOPICS.PAYMENT_CANCEL_REQUIRED, async (_key, payload) =>
 
 const publisher = new OutboxPublisher(outboxRepo, eventPublisher);
 
-// Lambda handler — invoked by scheduler (e.g. EventBridge cron)
-export async function handler(): Promise<{ published: number; failed: number }> {
+// Lambda handler — invoked by SQS (doorbell) or EventBridge safety-net schedule.
+// The SQS message body is intentionally ignored; the outbox table is the source
+// of truth. drainOnce() is idempotent via markPublished + retryCount.
+export async function handler(_evt: SQSEvent | unknown): Promise<{ published: number; failed: number }> {
   return publisher.drainOnce();
 }
