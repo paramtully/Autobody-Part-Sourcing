@@ -1,0 +1,4 @@
+{
+  "title": "Missing itemId — this record should fail schema validation",
+  "price": { "value": "50.00", "currency": "USD" }
+}

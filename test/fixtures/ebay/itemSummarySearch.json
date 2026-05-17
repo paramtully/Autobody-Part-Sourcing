@@ -1,0 +1,23 @@
+{
+  "href": "https://api.ebay.com/buy/browse/v1/item_summary/search?q=&category_ids=6028&limit=200&offset=0",
+  "next": "https://api.ebay.com/buy/browse/v1/item_summary/search?q=&category_ids=6028&limit=200&offset=200",
+  "limit": 200,
+  "offset": 0,
+  "total": 500,
+  "itemSummaries": [
+    {
+      "itemId": "v1|123456789|0",
+      "title": "2018 Honda Civic Front Bumper Cover OEM",
+      "price": { "value": "129.99", "currency": "USD" },
+      "condition": "Used",
+      "itemWebUrl": "https://www.ebay.com/itm/123456789"
+    },
+    {
+      "itemId": "v1|987654321|0",
+      "title": "Toyota Camry Rear Bumper",
+      "price": { "value": "89.00", "currency": "USD" },
+      "condition": "Used",
+      "itemWebUrl": "https://www.ebay.com/itm/987654321"
+    }
+  ]
+}

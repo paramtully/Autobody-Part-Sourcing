@@ -90,10 +90,10 @@ router.get("/by-fitment", (req: Request, res: Response) => {
 // search paginated listings by part number and page (1 indexed)
 router.get('/by-part-number/:partNumber', async (req: Request, res: Response) => {
 
-    const cursor = req.query?.cursor ? parseInt(req.query?.cursor as string) : undefined;
+    const cursor = req.query?.cursor !== undefined ? parseInt(req.query.cursor as string) : undefined;
     const partNumber: string = (req.params?.partNumber as string)?.trim().toUpperCase();
 
-    if (cursor && (isNaN(cursor))) {
+    if (cursor !== undefined && isNaN(cursor)) {
         return res.status(400).json({ error: 'Invalid cursor' });
     }
 
@@ -157,6 +157,7 @@ router.get('/images/:listingId', (req: Request, res: Response) => {
         sortOrder: listingImages.sortOrder
     }).from(listingImages)
         .where(eq(listingImages.listingId, listingId as string))
+        .orderBy(asc(listingImages.sortOrder))
     .then((images: any[]) => {
         return res.status(200).json({
             listingId: listingId,

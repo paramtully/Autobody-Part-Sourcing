@@ -64,7 +64,7 @@ router.get('/:partId', (req: Request, res: Response) => {
     db.select({
         make: fitments.make,
         model: fitments.model,
-        constraints: fitments.constrains,
+        constraint: fitments.constraint,
         minYear: min(fitments.year),
         maxYear: max(fitments.year),
         trims: sql<string[]>`
@@ -84,7 +84,7 @@ router.get('/:partId', (req: Request, res: Response) => {
         .from(partFitments)
         .innerJoin(fitments, eq(partFitments.fitmentId, fitments.id))
         .where(eq(partFitments.partId, partId as string))
-        .groupBy(fitments.make, fitments.model, fitments.constraints)
+        .groupBy(fitments.make, fitments.model, fitments.constraint)
     .then((fitmentArray: any[]) => {
         return res.status(200).json({ fitments: fitmentArray });
     }).catch((err: Error) => {

@@ -30,7 +30,7 @@ export const parts = pgTable('parts', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 },
  (table) => ({
-        uniqueIdentifier: unique('part_identifiers_unique').on(table.name, table.category),
+        uniqueIdentifier: unique('parts_name_category_unique').on(table.name, table.category),
     }),
 );
 

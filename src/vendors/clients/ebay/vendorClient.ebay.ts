@@ -143,7 +143,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         }
 
         if (!res.ok) {
-            throw this.throwVendorError(res);
+            await this.throwVendorError(res);
         }
 
         // format data and then get data from individual item summaries

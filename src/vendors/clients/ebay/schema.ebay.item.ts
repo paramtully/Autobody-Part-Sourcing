@@ -71,7 +71,7 @@ const eBayProductSchema = z.object({
     title: z.string().optional(),
     brand: z.string().optional(),
     mpn: z.string().optional(),
-    aspects: z.record(z.array(z.string())).optional(),
+    aspects: z.record(z.string(), z.array(z.string())).optional(),
 }).passthrough();
 
 // ── Item Detail Schema ────────────────────────────────────────────

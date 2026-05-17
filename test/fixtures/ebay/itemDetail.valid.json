@@ -1,0 +1,40 @@
+{
+  "itemId": "v1|123456789|0",
+  "legacyItemId": "123456789",
+  "title": "2018 Honda Civic Front Bumper Cover OEM",
+  "shortDescription": "Genuine OEM front bumper cover",
+  "price": { "value": "129.99", "currency": "USD" },
+  "condition": "Used",
+  "conditionId": "3000",
+  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers" },
+  "mpn": "04711-TBA-A90ZZ",
+  "brand": "Honda",
+  "itemWebUrl": "https://www.ebay.com/itm/123456789",
+  "estimatedAvailability": { "estimatedAvailableQuantity": 1 },
+  "shippingOptions": [
+    {
+      "shippingCostType": "FLAT",
+      "shippingCost": { "value": "25.00", "currency": "USD" },
+      "minEstimatedDeliveryDate": "2026-05-20T00:00:00.000Z",
+      "maxEstimatedDeliveryDate": "2026-05-24T00:00:00.000Z"
+    }
+  ],
+  "additionalImages": [
+    { "imageUrl": "https://i.ebayimg.com/images/g/abc/s-l500.jpg" },
+    { "imageUrl": "https://i.ebayimg.com/images/g/def/s-l500.jpg" }
+  ],
+  "compatibilityProperties": [
+    { "name": "Make", "value": "Honda" },
+    { "name": "Model", "value": "Civic" },
+    { "name": "Year", "value": "2018" },
+    { "name": "Trim", "value": "EX" }
+  ],
+  "product": {
+    "title": "Honda Civic Front Bumper Cover",
+    "brand": "Honda",
+    "aspects": {
+      "Manufacturer Part Number": ["04711-TBA-A90ZZ"],
+      "Parking Sensors": ["Without"]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "access_token": "v^1.1#i^1#r^0#I^3#p^3#f^0#t^H4sIAAAAAAAA==fake-token-for-tests",
+  "token_type": "Application Access Token",
+  "expires_in": 7200,
+  "refresh_token": "v^1.1#i^1#r^1#I^3#p^3#f^0#t^H4sIAAAAAAAA==fake-refresh",
+  "refresh_token_expires_in": 47304000
+}
