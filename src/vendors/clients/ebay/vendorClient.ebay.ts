@@ -2,7 +2,6 @@ import { VendorInventoryClient } from "../vendorInventoryClient";
 import { VendorError, VendorErrorType } from "../vendorError";
 import { AvailabilityStatus, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
 import { eBayItemSchema, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint } from "./schema.ebay.item";
-import { eBaySearchResponseSchema } from "./schema.ebay.search";
 import { Buffer } from 'buffer';
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -22,6 +21,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
     readonly vendorId = 'ebay';
     private readonly DEFAULT_PAGE_SIZE = 200;
     private readonly MOTORS_CATEGORY_ID = '6028';           //Motors → Parts & Accessories
+    private readonly DEFAULT_SEARCH_QUERY = 'auto body part';
     readonly config: eBayConfig = {
         vendorId: this.vendorId,
         apiKey: process.env.EBAY_API_KEY!,
@@ -103,17 +103,29 @@ export default class eBayVendorClient implements VendorInventoryClient {
     async fetchInventoryPage(cursor?: string): Promise<{ records: UnknownRawVendorRecord[]; nextCursor?: string; hasMore: boolean }> {
         await this.authenticate();
 
-        // get item summaries
-        const { records, nextCursor, hasMore } = await this.fetchItemSummaries(cursor);
+        const { records: summaries, nextCursor, hasMore } = await this.fetchItemSummaries(cursor);
 
-        // get detailed item listings for each listing in records
-        const itemIds = records
-            .map(r => (r as { itemId?: string }).itemId)
-            .filter((id): id is string => !!id);
+        // Build a fallback map keyed by itemId so failed detail fetches can use summary data.
+        const summaryById = new Map<string, UnknownRawVendorRecord>();
+        for (const s of summaries) {
+            const id = (s as { itemId?: string }).itemId;
+            if (id) summaryById.set(id, s);
+        }
 
-        const items: UnknownRawVendorRecord[] = await this.fetchItemDetailsConcurrent(itemIds);
+        const itemIds = [...summaryById.keys()];
+        const detailResults = await this.fetchItemDetailsConcurrent(itemIds);
 
-        return { records: items, nextCursor, hasMore };
+        // Index returned details by itemId.
+        const detailById = new Map<string, UnknownRawVendorRecord>();
+        for (const d of detailResults) {
+            const id = (d as { itemId?: string }).itemId;
+            if (id) detailById.set(id, d);
+        }
+
+        // Prefer enriched detail; fall back to summary when detail is unavailable.
+        const records = itemIds.map(id => detailById.get(id) ?? summaryById.get(id)!);
+
+        return { records, nextCursor, hasMore };
     }
 
     /**
@@ -124,19 +136,18 @@ export default class eBayVendorClient implements VendorInventoryClient {
     private async fetchItemSummaries(cursor?: string): Promise<{ records: UnknownRawVendorRecord[]; nextCursor?: string; hasMore: boolean }> {
         let res: Response;
         try {
-            const url: string = `${this.config.apiUrl}/buy/browse/v1/item_summary/search}`;
+            const params = new URLSearchParams({
+                q: this.DEFAULT_SEARCH_QUERY,
+                category_ids: this.MOTORS_CATEGORY_ID,
+                limit: this.DEFAULT_PAGE_SIZE.toString(),
+                offset: cursor ?? '0',
+            });
+            const url: string = `${this.config.apiUrl}/buy/browse/v1/item_summary/search?${params}`;
             res = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${this.config.token}`,
-                    "Content-Type": "application/json",
                 },
-                body: new URLSearchParams({
-                    q: '',
-                    category_ids: this.MOTORS_CATEGORY_ID,
-                    limit: this.DEFAULT_PAGE_SIZE.toString(),
-                    offset: cursor ?? '0',
-                }),
             });
         } catch (error) {
             throw new VendorError('NETWORK_ERROR', `eBay network error: ${error instanceof Error ? error.message : String(error)}`, this.config.retryAfterMs, error);
@@ -146,12 +157,11 @@ export default class eBayVendorClient implements VendorInventoryClient {
             await this.throwVendorError(res);
         }
 
-        // format data and then get data from individual item summaries
         const body = await res.json();
-        const records = body.itemSummaries
-            .map(item => eBaySearchResponseSchema.safeParse(item))
-            .filter(r => r.success)
-            .map(r => r.data);
+        const records = (body.itemSummaries ?? [])
+            .map((item: unknown) => eBayItemSchema.safeParse(item))
+            .filter((r: { success: boolean }) => r.success)
+            .map((r: { data: unknown }) => r.data as UnknownRawVendorRecord);
 
         if (records.length === 0) {
             throw new VendorError('INVALID_REQUEST', 'No data found in eBay response', this.config.retryAfterMs, new Error('No data found in eBay response'));

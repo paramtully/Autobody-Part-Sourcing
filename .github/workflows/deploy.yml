@@ -162,3 +162,7 @@ jobs:
       - run: npx drizzle-kit migrate
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+
+      - run: npm run seed
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
