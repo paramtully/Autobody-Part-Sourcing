@@ -1,10 +1,10 @@
 // Stub environment variables before any module loads dotenv.
 // This file runs during Jest's setupFiles phase, before test imports.
-// When LIVE_TESTS=1, skip stubbing vendor credentials so real .env values are used.
+// When LIVE_TESTS=1, skip stubbing so real .env values are used for all services.
 const live = process.env['LIVE_TESTS'] === '1';
 
-process.env['DATABASE_URL'] = 'memory://test';
 if (!live) {
+    process.env['DATABASE_URL'] = 'memory://test';
     process.env['EBAY_API_KEY'] = 'test-ebay-key';
     process.env['EBAY_API_SECRET'] = 'test-ebay-secret';
     process.env['EBAY_API_URL'] = 'https://api.ebay.com';

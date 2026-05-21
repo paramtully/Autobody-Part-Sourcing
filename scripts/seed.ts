@@ -12,12 +12,14 @@ import { db, vendors } from '../src/db/index.ts';
 
 // ── Vendors ───────────────────────────────────────────────────────────────────
 
-await db.insert(vendors).values({
-  id: 'ebay',
-  name: 'eBay',
-  vendorType: 'MARKETPLACE',
-  integrationType: 'API',
-}).onConflictDoNothing();
+(async () => {
+  await db.insert(vendors).values({
+    id: 'ebay',
+    name: 'eBay',
+    vendorType: 'MARKETPLACE',
+    integrationType: 'API',
+  }).onConflictDoNothing();
 
-console.log('Seed complete.');
-process.exit(0);
+  console.log('Seed complete.');
+  process.exit(0);
+})();

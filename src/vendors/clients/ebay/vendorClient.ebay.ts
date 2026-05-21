@@ -105,25 +105,25 @@ export default class eBayVendorClient implements VendorInventoryClient {
 
         const { records: summaries, nextCursor, hasMore } = await this.fetchItemSummaries(cursor);
 
-        // Build a fallback map keyed by itemId so failed detail fetches can use summary data.
+        // Build a summary fallback map for when detail fetches fail for non-404 reasons.
         const summaryById = new Map<string, UnknownRawVendorRecord>();
         for (const s of summaries) {
             const id = (s as { itemId?: string }).itemId;
             if (id) summaryById.set(id, s);
         }
-
         const itemIds = [...summaryById.keys()];
-        const detailResults = await this.fetchItemDetailsConcurrent(itemIds);
 
-        // Index returned details by itemId.
-        const detailById = new Map<string, UnknownRawVendorRecord>();
-        for (const d of detailResults) {
-            const id = (d as { itemId?: string }).itemId;
-            if (id) detailById.set(id, d);
-        }
+        // detailMap is keyed by requested itemId; null = 404 (drop), undefined key = other failure (use summary).
+        const detailMap = await this.fetchItemDetailsConcurrent(itemIds);
 
-        // Prefer enriched detail; fall back to summary when detail is unavailable.
-        const records = itemIds.map(id => detailById.get(id) ?? summaryById.get(id)!);
+        const records = itemIds.flatMap(id => {
+            const entry = detailMap.get(id);
+            if (entry === null) return [];                          // 404: item gone, drop
+            if (entry === undefined) return [];                    // not in map (shouldn't happen)
+            if (entry.record !== null) return [entry.record];     // success: use enriched detail
+            const summary = summaryById.get(id);                  // other failure: fall back to summary
+            return summary ? [summary] : [];
+        });
 
         return { records, nextCursor, hasMore };
     }
@@ -184,20 +184,19 @@ export default class eBayVendorClient implements VendorInventoryClient {
     private async fetchItemDetailsConcurrent(
         itemIds: string[],
         concurrency = 5,
-    ): Promise<UnknownRawVendorRecord[]> {
-        const results: UnknownRawVendorRecord[] = [];
+    ): Promise<Map<string, { record: UnknownRawVendorRecord | null } | null>> {
+        const resultMap = new Map<string, { record: UnknownRawVendorRecord | null } | null>();
         const queue = [...itemIds];
 
         const worker = async () => {
             while (queue.length > 0) {
                 const id = queue.shift()!;
-                const record = await this.fetchItemDetail(id);
-                if (record !== null) results.push(record);
+                resultMap.set(id, await this.fetchItemDetail(id));
             }
         };
 
         await Promise.all(Array.from({ length: concurrency }, worker));
-        return results;
+        return resultMap;
     }
 
     /**
@@ -209,7 +208,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
     private async fetchItemDetail(
         itemId: string,
         retriesLeft = 3,
-    ): Promise<UnknownRawVendorRecord | null> {
+    ): Promise<{ record: UnknownRawVendorRecord | null } | null> {
         let res: Response;
         try {
             res = await fetch(
@@ -217,7 +216,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                 { headers: { Authorization: `Bearer ${this.config.token}` } },
             );
         } catch {
-            return null; // network blip — skip item, don't crash page
+            return { record: null }; // network blip — fall back to summary
         }
 
         if (res.status === 429 && retriesLeft > 0) {
@@ -226,14 +225,17 @@ export default class eBayVendorClient implements VendorInventoryClient {
             return this.fetchItemDetail(itemId, retriesLeft - 1);
         }
 
+        if (res.status === 404) {
+            return null; // listing ended — caller drops the item entirely
+        }
+
         if (!res.ok) {
-            // 404 = listing ended; other errors — skip silently
-            return null;
+            return { record: null }; // other server error — fall back to summary
         }
 
         const body = await res.json();
         const parsed = eBayItemSchema.safeParse(body);
-        return parsed.success ? (parsed.data as UnknownRawVendorRecord) : null;
+        return { record: parsed.success ? (parsed.data as UnknownRawVendorRecord) : null };
     }
 
     async getAuthStatus(): Promise<{ valid: boolean; expiresAt?: Date }> {
