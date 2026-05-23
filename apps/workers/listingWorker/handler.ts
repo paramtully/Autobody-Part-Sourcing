@@ -34,8 +34,15 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
     // create new run if no run is in progress and not on cooldown period
     if (!run) {
         const last = await repo.findLatest(vendorId);
-        if (last?.completedAt && Date.now() - last.completedAt.getTime() < intervalMs) return;
+        if (last?.completedAt && Date.now() - last.completedAt.getTime() < intervalMs) {
+            const cooldownRemainMin = Math.ceil((intervalMs - (Date.now() - last.completedAt.getTime())) / 60_000);
+            console.log(`[ingest] skipping — last run completed at ${last.completedAt.toISOString()}, cooldown has ${cooldownRemainMin}m left (set INGEST_INTERVAL_MS=0 to disable)`);
+            return;
+        }
         run = await repo.create(vendorId);
+        console.log(`[ingest] starting new run ${run.id} for vendor '${vendorId}'`);
+    } else {
+        console.log(`[ingest] resuming in-progress run ${run.id} for vendor '${vendorId}' from cursor ${run.lastCursor ?? 'start'}`);
     }
 
     const pipeline = new VendorPipeline(CLIENTS[vendorId], new DrizzleRecordProcessor());
@@ -44,6 +51,7 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
 
     try {
         while (Date.now() < deadlineAt) {
+            console.log(`[ingest] fetching page (cursor=${cursor ?? 'start'}, pages so far=${stats.pagesFetched})`);
             const page: PageResult = await pipeline.processPage(cursor);
             cursor = page.nextCursor;
             stats.processed += page.result.succeeded + page.result.failed + page.result.skipped;
@@ -52,6 +60,8 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
             stats.skipped += page.result.skipped;
             stats.pagesFetched++;
 
+            console.log(`[ingest] page done — succeeded=${page.result.succeeded} failed=${page.result.failed} skipped=${page.result.skipped} hasMore=${page.hasMore}`);
+
             const completed = !page.hasMore;
             await repo.update(run.id, {
                 lastCursor: completed ? null : (cursor ?? null),
@@ -59,8 +69,12 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
                 stats,
                 ...(completed ? { status: 'COMPLETED' as const, completedAt: new Date() } : {}),
             });
-            if (completed) return;
+            if (completed) {
+                console.log(`[ingest] run ${run.id} completed — total: processed=${stats.processed} succeeded=${stats.succeeded} failed=${stats.failed} skipped=${stats.skipped}`);
+                return;
+            }
         }
+        console.log(`[ingest] deadline reached — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
     } catch (e) {
         await repo.update(run.id, {
             status: 'FAILED',

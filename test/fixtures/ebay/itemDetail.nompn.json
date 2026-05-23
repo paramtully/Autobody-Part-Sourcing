@@ -4,6 +4,14 @@
   "title": "Used Headlight Assembly",
   "price": { "value": "45.00", "currency": "USD" },
   "condition": "Used",
-  "primaryCategory": { "categoryId": "33637", "categoryName": "Headlights" },
-  "estimatedAvailability": { "estimatedAvailableQuantity": 3 }
+  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Lighting & Lamps|Headlights",
+  "primaryCategory": { "categoryId": "33710", "categoryName": "Headlights" },
+  "estimatedAvailabilities": [
+    {
+      "deliveryOptions": ["SHIP_TO_HOME"],
+      "estimatedAvailableQuantity": 3,
+      "availabilityThresholdType": "MORE_THAN",
+      "availabilityThreshold": 2
+    }
+  ]
 }

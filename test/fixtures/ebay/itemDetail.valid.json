@@ -2,21 +2,30 @@
   "itemId": "v1|123456789|0",
   "legacyItemId": "123456789",
   "title": "2018 Honda Civic Front Bumper Cover OEM",
-  "shortDescription": "Genuine OEM front bumper cover",
+  "shortDescription": "Genuine OEM front bumper cover for 2018 Honda Civic.",
   "price": { "value": "129.99", "currency": "USD" },
   "condition": "Used",
   "conditionId": "3000",
-  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers" },
-  "mpn": "04711-TBA-A90ZZ",
+  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Body Parts & Mirrors|Bumpers & Bumper Parts",
+  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers & Bumper Parts" },
   "brand": "Honda",
+  "seller": { "username": "honda_parts_direct", "feedbackPercentage": "99.5", "feedbackScore": 12345 },
   "itemWebUrl": "https://www.ebay.com/itm/123456789",
-  "estimatedAvailability": { "estimatedAvailableQuantity": 1 },
+  "estimatedAvailabilities": [
+    {
+      "deliveryOptions": ["SHIP_TO_HOME"],
+      "estimatedRemainingQuantity": 1,
+      "estimatedSoldQuantity": 4,
+      "availabilityThresholdType": "MORE_THAN",
+      "availabilityThreshold": 0
+    }
+  ],
   "shippingOptions": [
     {
       "shippingCostType": "FLAT",
       "shippingCost": { "value": "25.00", "currency": "USD" },
-      "minEstimatedDeliveryDate": "2026-05-20T00:00:00.000Z",
-      "maxEstimatedDeliveryDate": "2026-05-24T00:00:00.000Z"
+      "minEstimatedDeliveryDate": "2030-01-05T00:00:00.000Z",
+      "maxEstimatedDeliveryDate": "2030-01-10T00:00:00.000Z"
     }
   ],
   "additionalImages": [
@@ -29,12 +38,13 @@
     { "name": "Year", "value": "2018" },
     { "name": "Trim", "value": "EX" }
   ],
-  "product": {
-    "title": "Honda Civic Front Bumper Cover",
-    "brand": "Honda",
-    "aspects": {
-      "Manufacturer Part Number": ["04711-TBA-A90ZZ"],
-      "Parking Sensors": ["Without"]
-    }
-  }
+  "localizedAspects": [
+    { "name": "Brand", "value": "Honda" },
+    { "name": "Part Name", "value": "Bumper Cover" },
+    { "name": "Placement on Vehicle", "value": "Front" },
+    { "name": "Manufacturer Part Number", "value": "04711-TBA-A90ZZ" },
+    { "name": "Partslink Number", "value": "HO1000296" },
+    { "name": "OE/OEM Part Number", "value": "71101-TBA-A50ZZ" },
+    { "name": "Parking Sensors", "value": "Without" }
+  ]
 }

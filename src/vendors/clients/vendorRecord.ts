@@ -15,6 +15,8 @@ export interface VendorRecord {
       name: string;
       category: string;
       position?: string;
+      description?: string;
+      weightGrams?: number;
     };
     // At least one identifier required — listing is rejected if empty
     identifiers: Array<{
@@ -46,5 +48,6 @@ export interface VendorRecord {
       sourceDamageType?: string;
       estimatedShipTimeHours?: number;
       images?: Array<{ url: string; type?: string }>;
+      warehouseLocation?: { country: string; stateOrProvince?: string; city?: string; postalCode?: string };
     };
   }

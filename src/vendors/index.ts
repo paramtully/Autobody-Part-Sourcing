@@ -1,5 +1,6 @@
 // Vendor ingestion clients and pipeline.
-export * from './pipeline';
+export { VendorPipeline } from './pipeline';
+export type { PageResult } from './pipeline';
 export { default as DrizzleRecordProcessor } from './recordProcessor/recordProcessor';
 export { LKQVendorClient } from './clients/lkq';
 export { eBayVendorClient } from './clients/ebay';

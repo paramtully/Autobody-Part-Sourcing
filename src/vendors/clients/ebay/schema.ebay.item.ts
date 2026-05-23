@@ -50,8 +50,12 @@ const eBayCategorySchema = z.object({
 }).passthrough();
 
 const eBayEstimatedAvailabilitySchema = z.object({
-    estimatedAvailableQuantity: z.number().int().nonnegative().optional().nullable(),
+    estimatedRemainingQuantity: z.number().int().nonnegative().optional().nullable(),
     estimatedSoldQuantity: z.number().int().nonnegative().optional().nullable(),
+    estimatedAvailabilityStatus: z.string().optional(),
+    deliveryOptions: z.array(z.string()).optional(),
+    availabilityThresholdType: z.string().optional(),
+    availabilityThreshold: z.number().int().optional(),
 }).passthrough();
 
 const eBayWarningSchema = z.object({
@@ -89,7 +93,7 @@ export const eBayItemSchema = z.object({
     brand: z.string().optional(),
     mpn: z.string().optional(),
     seller: eBaySellerSchema.optional(),
-    estimatedAvailability: eBayEstimatedAvailabilitySchema.optional(),
+    estimatedAvailabilities: z.array(eBayEstimatedAvailabilitySchema).optional(),
     itemLocation: eBayItemLocationSchema.optional(),
     shippingOptions: z.array(eBayShippingOptionSchema).optional(),
     returnTerms: eBayReturnTermsSchema.optional(),
@@ -100,7 +104,21 @@ export const eBayItemSchema = z.object({
     warnings: z.array(eBayWarningSchema).optional(),
     compatibilityProperties: z.array(eBayCompatibilityPropertySchema).optional(),
     product: eBayProductSchema.optional(),
+    localizedAspects: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
+    // Injected by fetchInventoryPage after Trading API enrichment — not from eBay directly
+    _fitments: z.array(z.object({
+        make: z.string(), model: z.string(), year: z.number(),
+        trim: z.string().optional(), engine: z.string().optional(),
+    })).optional(),
 }).passthrough();
+
+/** Merges localizedAspects (primary) + product.aspects (fallback) into a single lookup map. */
+export function buildAspectMap(item: EBayItem): EbayAspects {
+    const map: EbayAspects = {};
+    for (const [k, v] of Object.entries(item.product?.aspects ?? {})) map[k] = v;
+    for (const { name, value } of item.localizedAspects ?? []) map[name] = [value];
+    return map;
+}
 
 export type EBayItem = z.infer<typeof eBayItemSchema>;
 
@@ -183,6 +201,95 @@ export function mapEbayConstraint(aspects?: EbayAspects): FitmentConstraint | un
     return undefined;
 }
 
+// ── Category mapping ──────────────────────────────────────────────
+
+/** Maps eBay categoryPath / categoryName to a part_category enum value.
+ *  Checks the full category breadcrumb (most-specific part last) for the
+ *  first matching keyword pattern, falling back to 'OTHER'. */
+export function mapEbayCategory(categoryPath?: string, categoryName?: string): string {
+    const text = [categoryPath, categoryName].filter(Boolean).join(' ').toLowerCase();
+
+    // Most-specific patterns first to avoid false positives on broader terms
+    if (/bumper\s*(cover|fascia)/.test(text)) return 'BUMPER_COVER';
+    if (/bumper\s*beam/.test(text)) return 'BUMPER_BEAM';
+    if (/bumper\s*bracket/.test(text)) return 'BUMPER_BRACKET';
+    if (/bumper\s*foam|absorber/.test(text)) return 'BUMPER_FOAM';
+    if (/bumper/.test(text)) return 'BUMPER';
+
+    if (/fender\s*liner|wheel\s*(well|arch)\s*liner/.test(text)) return 'FENDER_LINER';
+    if (/wheel\s*(well|arch)/.test(text)) return 'WHEEL_ARCH';
+    if (/fender/.test(text)) return 'FENDER';
+
+    if (/door\s*handle/.test(text)) return 'DOOR_HANDLE';
+    if (/door\s*lock/.test(text)) return 'DOOR_LOCK';
+    if (/door\s*glass/.test(text)) return 'DOOR_GLASS';
+    if (/door\s*mirror/.test(text)) return 'DOOR_MIRROR';
+    if (/hinge/.test(text) && /door/.test(text)) return 'HINGE';
+    if (/door/.test(text)) return 'DOOR';
+
+    if (/hood\s*hinge/.test(text)) return 'HOOD_HINGE';
+    if (/hood\s*latch/.test(text)) return 'HOOD_LATCH';
+    if (/\bhoods?\b/.test(text)) return 'HOOD';
+
+    if (/trunk\s*hinge/.test(text)) return 'TRUNK_HINGE';
+    if (/trunk\s*latch/.test(text)) return 'TRUNK_LATCH';
+    if (/trunk\s*(lid|deck)/.test(text)) return 'TRUNK_LID';
+
+    if (/quarter\s*panel/.test(text)) return 'QUARTER_PANEL';
+    if (/rocker\s*panel/.test(text)) return 'ROCKER_PANEL';
+    if (/roof\s*panel/.test(text)) return 'ROOF_PANEL';
+
+    if (/headlight|head\s*lamp/.test(text)) return 'HEADLIGHT';
+    if (/taillight|tail\s*lamp|tail\s*light/.test(text)) return 'TAILLIGHT';
+    if (/fog\s*light|fog\s*lamp/.test(text)) return 'FOG_LIGHT';
+    if (/turn\s*signal|signal\s*light/.test(text)) return 'TURN_SIGNAL';
+    if (/marker\s*light/.test(text)) return 'MARKER_LIGHT';
+    if (/reverse\s*light|backup\s*light/.test(text)) return 'REVERSE_LIGHT';
+    if (/interior\s*light/.test(text)) return 'INTERIOR_LIGHT';
+
+    if (/windshield|windscreen/.test(text)) return 'WINDSHIELD';
+    if (/rear\s*(window|glass|windshield)/.test(text)) return 'REAR_WINDOW';
+    if (/sunroof\s*glass/.test(text)) return 'SUNROOF_GLASS';
+    if (/side\s*(window|glass)/.test(text)) return 'SIDE_WINDOW';
+
+    if (/\bgrilles?\b/.test(text)) return 'GRILLE';
+    if (/moldings?|mouldings?/.test(text)) return 'MOLDING';
+    if (/trim\s*piece|body\s*trim|trim\s*panel/.test(text)) return 'TRIM_PIECE';
+    if (/\bbadge\b/.test(text)) return 'BADGE';
+    if (/emblem/.test(text)) return 'EMBLEM';
+
+    if (/mirror\s*glass/.test(text)) return 'MIRROR_GLASS';
+    if (/mirror\s*cover/.test(text)) return 'MIRROR_COVER';
+    if (/mirror/.test(text)) return 'MIRROR';
+
+    if (/radiator\s*support/.test(text)) return 'RADIATOR_SUPPORT';
+    if (/core\s*support/.test(text)) return 'CORE_SUPPORT';
+
+    if (/frame\s*rail/.test(text)) return 'FRAME_RAIL';
+    if (/unibody/.test(text)) return 'UNIBODY_PANEL';
+    if (/crossmember/.test(text)) return 'CROSSMEMBER';
+
+    if (/wheel\s*cover|hub\s*cap/.test(text)) return 'WHEEL_COVER';
+    if (/\bwheels?\b/.test(text)) return 'WHEEL';
+    if (/\btires?\b/.test(text)) return 'TIRE';
+
+    if (/parking\s*sensors?/.test(text)) return 'PARKING_SENSOR';
+    if (/blind\s*spot\s*sensors?/.test(text)) return 'BLIND_SPOT_SENSOR';
+    if (/\bcameras?\b/.test(text)) return 'CAMERA';
+    if (/radar\s*sensors?/.test(text)) return 'RADAR_SENSOR';
+    if (/leveling\s*sensor/.test(text)) return 'HEADLIGHT_LEVELING_SENSOR';
+
+    if (/\bbracket\b/.test(text)) return 'BRACKET';
+    if (/\bmount\b/.test(text)) return 'MOUNT';
+    if (/\bsupport\b/.test(text)) return 'SUPPORT';
+
+    if (/weatherstrip/.test(text)) return 'WEATHERSTRIP';
+    if (/\bseal\b/.test(text)) return 'SEAL';
+    if (/\bgasket\b/.test(text)) return 'GASKET';
+
+    return 'OTHER';
+}
+
 // ── Availability mapping ──────────────────────────────────────────
 
 export function mapEbayItemAvailability(estimatedAvailableQuantity?: number | null): string {
@@ -193,4 +300,90 @@ export function mapEbayItemAvailability(estimatedAvailableQuantity?: number | nu
     if (estimatedAvailableQuantity <= 2)
         return 'LOW_STOCK';
     return 'IN_STOCK';
+}
+
+// ── Position mapping ──────────────────────────────────────────────
+
+/** Maps eBay "Placement on Vehicle" aspect + category to a part_position enum value. */
+export function mapEbayPosition(category: string, placement?: string): string | undefined {
+    if (!placement || placement.includes(',')) return undefined;
+    const p = placement.toLowerCase();
+    const isLeft  = /\b(left|driver|lh)\b/.test(p);
+    const isRight = /\b(right|passenger|rh)\b/.test(p);
+    const isFront = /\bfront\b/.test(p);
+    const isRear  = /\b(rear|back)\b/.test(p);
+
+    switch (category) {
+        case 'HEADLIGHT':    return isLeft ? 'HEADLIGHT_LEFT'    : isRight ? 'HEADLIGHT_RIGHT'    : undefined;
+        case 'TAILLIGHT':    return isLeft ? 'TAILLIGHT_LEFT'    : isRight ? 'TAILLIGHT_RIGHT'    : undefined;
+        case 'MIRROR':
+        case 'DOOR_MIRROR':  return isLeft ? 'MIRROR_LEFT'       : isRight ? 'MIRROR_RIGHT'       : undefined;
+        case 'FENDER':       return isLeft ? 'FRONT_LEFT_FENDER' : isRight ? 'FRONT_RIGHT_FENDER' : undefined;
+        case 'FENDER_LINER': return isLeft ? 'FENDER_LINER_LEFT' : isRight ? 'FENDER_LINER_RIGHT' : undefined;
+        case 'DOOR':
+        case 'DOOR_HANDLE':  return isLeft && isFront ? 'FRONT_LEFT_DOOR' : isRight && isFront ? 'FRONT_RIGHT_DOOR'
+                                  : isLeft && isRear  ? 'REAR_LEFT_DOOR'  : isRight && isRear  ? 'REAR_RIGHT_DOOR' : undefined;
+        case 'QUARTER_PANEL': return isLeft ? 'QUARTER_PANEL_LEFT' : isRight ? 'QUARTER_PANEL_RIGHT' : undefined;
+        case 'SIDE_WINDOW':  return isLeft ? 'SIDE_WINDOW_LEFT'  : isRight ? 'SIDE_WINDOW_RIGHT'  : undefined;
+        case 'BUMPER':
+        case 'BUMPER_COVER': return isFront ? 'FRONT_BUMPER' : isRear ? 'REAR_BUMPER' : undefined;
+        default:             return undefined;
+    }
+}
+
+// ── Weight parsing ────────────────────────────────────────────────
+
+/** Parses eBay "Item Weight" aspect string (e.g. "5.2 lb", "350 g") to grams. */
+export function parseItemWeightGrams(weightStr?: string): number | undefined {
+    if (!weightStr) return undefined;
+    const m = weightStr.match(/(\d+(?:\.\d+)?)\s*(lb|lbs|oz|kg|g)\b/i);
+    if (!m) return undefined;
+    const v = parseFloat(m[1]);
+    switch (m[2].toLowerCase()) {
+        case 'lb': case 'lbs': return Math.round(v * 453.592);
+        case 'oz':             return Math.round(v * 28.3495);
+        case 'kg':             return Math.round(v * 1000);
+        case 'g':              return Math.round(v);
+        default:               return undefined;
+    }
+}
+
+// ── Certification mapping ─────────────────────────────────────────
+
+/** Returns CAPA or NSF certification if present in product aspects. */
+export function mapEbayCertification(aspects?: EbayAspects): 'CAPA' | 'NSF' | undefined {
+    const cert = aspects?.['Certification']?.[0]?.toUpperCase() ?? '';
+    if (cert.includes('CAPA')) return 'CAPA';
+    if (cert.includes('NSF'))  return 'NSF';
+    return undefined;
+}
+
+// ── VIN / damage extraction ───────────────────────────────────────
+
+export function extractVin(text: string): string | undefined {
+    return text.match(/\b[A-HJ-NPR-Z0-9]{17}\b/)?.[0];
+}
+
+export function extractDamageType(text: string): string | undefined {
+    if (/collision|wrecked/i.test(text)) return 'COLLISION';
+    if (/flood/i.test(text))             return 'FLOOD';
+    if (/hail/i.test(text))              return 'HAIL';
+    if (/salvage/i.test(text))           return 'SALVAGE';
+    return undefined;
+}
+
+// ── HTML stripping ────────────────────────────────────────────────
+
+const HTML_ENTITIES: Record<string, string> = {
+    '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
+    '&copy;': '©', '&reg;': '®', '&trade;': '™',
+};
+
+export function stripHtml(text: string): string {
+    return text
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&[a-z]+;/gi, m => HTML_ENTITIES[m] ?? ' ')
+        .replace(/&#\d+;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }

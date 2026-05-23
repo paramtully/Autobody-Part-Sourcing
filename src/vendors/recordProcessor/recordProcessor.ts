@@ -1,6 +1,6 @@
 import { VendorRecord } from "../clients/vendorRecord";
-import { db, parts, partIdentifiers, fitments, partFitments, listings, listingImages } from "@repo/db";
-import { inArray, and } from "drizzle-orm";
+import { db, parts, partIdentifiers, fitments, partFitments, listings, listingImages, warehouseLocations } from "@repo/db";
+import { inArray, and, eq, sql } from "drizzle-orm";
 
 export interface BatchResult {
   succeeded: number;
@@ -44,6 +44,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
         type ListingQueueItem = { partIdentifierId: string; record: VendorRecord; confidence: number };
         const listingQueue: ListingQueueItem[] = [];
+        const warehouseLocationCache = new Map<string, string>();
 
         await db.transaction(async (tx) => {
 
@@ -57,7 +58,10 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                         name: rep.name,
                         category: rep.category as typeof parts.$inferInsert['category'],
                         position: (rep.position ?? null) as typeof parts.$inferInsert['position'],
+                        description: rep.description ?? null,
+                        weightGrams: rep.weightGrams ?? null,
                     })
+                    .onConflictDoUpdate({ target: [parts.name, parts.category], set: { updatedAt: sql`now()` } })
                     .returning({ id: parts.id });
 
                 // deduplicate fitments across the whole group before writing
@@ -106,9 +110,17 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 }
             }
 
-            // 4b: existing parts — add any new identifiers and fitments not yet linked
+            // 4b: existing parts — patch enriched fields and add any new identifiers/fitments not yet linked
             for (const r of existingRecords) {
                 const partId = [...r.partIds][0];
+                const p = r.record.part;
+                if (p.description || p.weightGrams || p.position) {
+                    await tx.update(parts).set({
+                        ...(p.description && { description: p.description }),
+                        ...(p.weightGrams  && { weightGrams: p.weightGrams }),
+                        ...(p.position     && { position: p.position as typeof parts.$inferInsert['position'] }),
+                    }).where(eq(parts.id, partId));
+                }
 
                 const newIdentifiers = r.record.identifiers.filter(i => !(valueToPartIds.get(i.value)?.has(partId)));
                 if (newIdentifiers.length > 0) {
@@ -155,6 +167,10 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 if (!partIdentifierId) { failed++; continue; }
                 const l = record.listing;
 
+                const warehouseLocationId = l.warehouseLocation
+                    ? await this.getOrCreateWarehouseLocation(tx, l.warehouseLocation, warehouseLocationCache)
+                    : undefined;
+
                 const [row] = await tx
                     .insert(listings)
                     .values({
@@ -173,6 +189,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                         sourceMileage: l.sourceMileage,
                         sourceDamageType: l.sourceDamageType,
                         estimatedShipTimeHours: l.estimatedShipTimeHours,
+                        warehouseLocationId: warehouseLocationId ?? null,
                         confidenceScore: confidence.toString(),
                         source: 'VENDOR_API',
                         lastSeenAt: now,
@@ -182,11 +199,15 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                         target: [listings.vendorId, listings.vendorListingExternalId],
                         set: {
                             partIdentifierId,
+                            description: l.description,
                             availabilityStatus: l.availabilityStatus,
                             priceMinorMin: l.priceMinorMin,
                             priceMinorMax: l.priceMinorMax,
                             quantityAvailable: l.quantityAvailable,
                             estimatedShipTimeHours: l.estimatedShipTimeHours,
+                            warehouseLocationId: warehouseLocationId ?? null,
+                            sourceVehicleVin: l.sourceVehicleVin,
+                            sourceDamageType: l.sourceDamageType,
                             confidenceScore: confidence.toString(),
                             isActive: true,
                             lastSeenAt: now,
@@ -276,27 +297,34 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         const conflictRecords: ResolvedRecord[] = [];
 
         for (const record of records) {
-            const recordPartIds: Set<string> = new Set();
+            // Vote-count: each identifier contributes all the parts it's already linked to.
+            // Own-MPN is always first in identifiers[] so its partIdentifierId is picked preferentially.
+            const votes = new Map<string, number>();
             let recordPartIdentifierId: string | undefined;
 
             for (const identifier of record.identifiers) {
-                const partIds = valueToPartIds.get(identifier.value) ?? [];
-                for (const partId of partIds) recordPartIds.add(partId);
+                const partIds = valueToPartIds.get(identifier.value) ?? new Set<string>();
+                for (const partId of partIds) votes.set(partId, (votes.get(partId) ?? 0) + 1);
                 if (!recordPartIdentifierId) recordPartIdentifierId = valueToPartIdentifierId.get(identifier.value);
             }
+
+            const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+            const isTie = ranked.length >= 2 && ranked[0][1] === ranked[1][1];
+            const winnerPartId = (!isTie && ranked[0]) ? ranked[0][0] : undefined;
+            const recordPartIds: Set<string> = winnerPartId ? new Set([winnerPartId]) : new Set(votes.keys());
 
             const resolved: ResolvedRecord = {
                 record,
                 partIds: recordPartIds,
                 partIdentifierId: recordPartIdentifierId ?? '',
-                isValid: recordPartIds.size <= 1,
-                isNew: recordPartIds.size === 0,
+                isValid: !isTie,
+                isNew: votes.size === 0,
             };
 
-            if (recordPartIds.size > 1) {
-                console.warn(`Skipping record ${record.listing.vendorListingExternalId}: identifiers resolve to ${recordPartIds.size} parts`);
+            if (isTie) {
+                console.warn(`Skipping record ${record.listing.vendorListingExternalId}: identifiers tie across ${ranked.length} parts`);
                 conflictRecords.push(resolved);
-            } else if (recordPartIds.size === 1) {
+            } else if (votes.size > 0) {
                 existingRecords.push(resolved);
             } else {
                 newRecords.push(resolved);
@@ -319,5 +347,43 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
     private fitmentKey(f: { make: string; model: string; year: number; constraint?: string | null; trim?: string | null; engine?: string | null }): string {
         return `${f.make}:${f.model}:${f.year}:${f.constraint ?? ''}:${f.trim ?? ''}:${f.engine ?? ''}`;
+    }
+
+    private async getOrCreateWarehouseLocation(
+        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        loc: NonNullable<VendorRecord['listing']['warehouseLocation']>,
+        cache: Map<string, string>,
+    ): Promise<string> {
+        const key = `${loc.country}|${loc.stateOrProvince ?? ''}|${loc.city ?? ''}|${loc.postalCode ?? ''}`;
+        const cached = cache.get(key);
+        if (cached) return cached;
+
+        const [existing] = await tx
+            .select({ id: warehouseLocations.id })
+            .from(warehouseLocations)
+            .where(
+                and(
+                    eq(warehouseLocations.country, loc.country),
+                    eq(warehouseLocations.stateOrProvince, loc.stateOrProvince ?? ''),
+                    eq(warehouseLocations.city, loc.city ?? ''),
+                    eq(warehouseLocations.postalCode, loc.postalCode ?? ''),
+                ),
+            )
+            .limit(1);
+
+        if (existing) {
+            cache.set(key, existing.id);
+            return existing.id;
+        }
+
+        const [inserted] = await tx
+            .insert(warehouseLocations)
+            .values({ country: loc.country, stateOrProvince: loc.stateOrProvince, city: loc.city, postalCode: loc.postalCode })
+            .onConflictDoNothing()
+            .returning({ id: warehouseLocations.id });
+
+        const id = inserted?.id ?? (await tx.select({ id: warehouseLocations.id }).from(warehouseLocations).where(eq(warehouseLocations.country, loc.country)).limit(1))[0]?.id ?? '';
+        cache.set(key, id);
+        return id;
     }
 }

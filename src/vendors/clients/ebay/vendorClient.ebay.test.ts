@@ -4,6 +4,7 @@ import {
   mapEbayCondition,
   mapEbayItemAvailability,
   mapEbayConstraint,
+  mapEbayCategory,
 } from './schema.ebay.item';
 import { mockFetchSequence, restoreFetch } from '../../../../test/setup/mockFetch';
 
@@ -47,15 +48,81 @@ describe('mapRecord', () => {
     const client = makeClient();
     const record = client.mapRecord(validItem);
 
-    expect(record.part.name).toBeTruthy();
-    expect(record.identifiers.length).toBeGreaterThanOrEqual(1);
+    // part — name from "Part Name" aspect, not raw title; position from "Placement on Vehicle"
+    expect(record.part.name).toBe('Bumper Cover');
+    expect(record.part.category).toBe('BUMPER');
+    expect(record.part.position).toBe('FRONT_BUMPER');
+
+    // identifiers: own MPN first (OEM, Honda brand), then Partslink (AFTERMARKET), then OE cross-ref (OEM)
+    expect(record.identifiers).toHaveLength(3);
+    expect(record.identifiers[0]).toMatchObject({ type: 'OEM', value: '04711-TBA-A90ZZ', manufacturer: 'Honda' });
+    expect(record.identifiers[1]).toMatchObject({ type: 'AFTERMARKET', value: 'HO1000296', manufacturer: undefined });
+    expect(record.identifiers[2]).toMatchObject({ type: 'OEM', value: '71101-TBA-A50ZZ', manufacturer: undefined });
+
+    // listing
     expect(record.listing.vendorListingExternalId).toBe('v1|123456789|0');
-    expect(record.listing.priceMinorMin).toBe(12999);  // "$129.99" → 12999 cents
+    expect(record.listing.sourceUrl).toBe('https://www.ebay.com/itm/123456789');
+    expect(record.listing.priceMinorMin).toBe(12999);
     expect(record.listing.currency).toBe('USD');
-    expect(['NEW_OEM', 'NEW_AFTERMARKET', 'RECYCLED', 'REMANUFACTURED', 'RECONDITIONED', 'UNKNOWN'])
-      .toContain(record.listing.condition);
-    expect(['IN_STOCK', 'LOW_STOCK', 'BACKORDER', 'SPECIAL_ORDER', 'UNKNOWN'])
-      .toContain(record.listing.availabilityStatus);
+    expect(record.listing.condition).toBe('RECYCLED');  // "Used"
+    expect(record.listing.description).toBe('Genuine OEM front bumper cover for 2018 Honda Civic.');
+    expect(record.listing.quantityAvailable).toBe(1);
+    expect(record.listing.availabilityStatus).toBe('LOW_STOCK');
+    expect(record.listing.estimatedShipTimeHours).toBeGreaterThan(0);
+    expect(record.listing.images).toHaveLength(2);
+    expect(record.listing.images![0]!.url).toBe('https://i.ebayimg.com/images/g/abc/s-l500.jpg');
+  });
+
+  it('brand cleanup — junk brand yields undefined manufacturer on fallback identifier', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [{ name: 'Brand', value: 'Unbranded' }],
+    };
+    const record = client.mapRecord(item);
+    // With no MPN/Partslink/OE aspects and junk brand, falls back to legacyItemId INTERCHANGE
+    expect(record.identifiers[0]!.type).toBe('INTERCHANGE');
+    expect(record.identifiers[0]!.manufacturer).toBeUndefined();
+  });
+
+  it('brand cleanup — seller username as brand yields undefined manufacturer', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [{ name: 'Brand', value: 'honda_parts_direct' }],
+    };
+    const record = client.mapRecord(item);
+    expect(record.identifiers[0]!.manufacturer).toBeUndefined();
+  });
+
+  it('comma-separated Partslink emits one identifier per value', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [
+        { name: 'Manufacturer Part Number', value: 'MYPART-001' },
+        { name: 'Partslink Number', value: 'HO1000296, HO1241185' },
+        { name: 'Brand', value: 'Dorman' },
+      ],
+    };
+    const record = client.mapRecord(item);
+    const partslinks = record.identifiers.filter(i => i.type === 'AFTERMARKET' && !i.manufacturer);
+    expect(partslinks).toHaveLength(2);
+    expect(partslinks[0]!.value).toBe('HO1000296');
+    expect(partslinks[1]!.value).toBe('HO1241185');
+  });
+
+  it('multi-vehicle placement (comma in value) yields undefined position', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [
+        { name: 'Placement on Vehicle', value: 'Front, Rear' },
+        { name: 'Part Name', value: 'Bumper Cover' },
+      ],
+    };
+    const record = client.mapRecord(item);
+    expect(record.part.position).toBeUndefined();
   });
 
   it('validation failure — throws VendorError(VALIDATION_ERROR) for invalid raw record', () => {
@@ -268,6 +335,41 @@ describe('mapEbayItemAvailability', () => {
 
   it.each(cases)('%s → %s', (qty, expected) => {
     expect(mapEbayItemAvailability(qty)).toBe(expected);
+  });
+});
+
+// ── mapEbayCategory ───────────────────────────────────────────────────────────
+
+describe('mapEbayCategory', () => {
+  const cases: Array<[string | undefined, string | undefined, string]> = [
+    // categoryPath drives the match
+    ['eBay Motors|Parts & Accessories|Body Parts|Bumpers & Bumper Parts', undefined, 'BUMPER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Bumper Covers', undefined, 'BUMPER_COVER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Fenders', undefined, 'FENDER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Fender Liners', undefined, 'FENDER_LINER'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Headlights', undefined, 'HEADLIGHT'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Taillights', undefined, 'TAILLIGHT'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Fog Lights', undefined, 'FOG_LIGHT'],
+    ['eBay Motors|Parts & Accessories|Glass|Windshields', undefined, 'WINDSHIELD'],
+    ['eBay Motors|Parts & Accessories|Glass|Rear Window Glass', undefined, 'REAR_WINDOW'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Doors', undefined, 'DOOR'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Door Handles', undefined, 'DOOR_HANDLE'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Hoods', undefined, 'HOOD'],
+    ['eBay Motors|Parts & Accessories|Mirrors|Side View Mirrors', undefined, 'MIRROR'],
+    ['eBay Motors|Parts & Accessories|Mirrors|Mirror Glass', undefined, 'MIRROR_GLASS'],
+    // categoryName as fallback when path is absent
+    [undefined, 'Bumpers & Bumper Parts', 'BUMPER'],
+    [undefined, 'Headlights', 'HEADLIGHT'],
+    [undefined, 'Grilles', 'GRILLE'],
+    [undefined, 'Moldings', 'MOLDING'],
+    // unrecognized → OTHER
+    [undefined, undefined, 'OTHER'],
+    [undefined, 'Auto Parts', 'OTHER'],
+    ['eBay Motors|Parts & Accessories', 'Auto Parts', 'OTHER'],
+  ];
+
+  it.each(cases)('categoryPath=%s, categoryName=%s → %s', (path, name, expected) => {
+    expect(mapEbayCategory(path, name)).toBe(expected);
   });
 });
 

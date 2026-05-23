@@ -1,10 +1,42 @@
 import { VendorInventoryClient } from "../vendorInventoryClient";
 import { VendorError, VendorErrorType } from "../vendorError";
 import { AvailabilityStatus, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
-import { eBayItemSchema, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint } from "./schema.ebay.item";
+import {
+    eBayItemSchema, buildAspectMap, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint, mapEbayCategory,
+    mapEbayPosition, parseItemWeightGrams, mapEbayCertification,
+    extractVin, extractDamageType, stripHtml,
+} from "./schema.ebay.item";
+import { fetchEbayItemCompatibilities } from "./tradingApi";
 import { Buffer } from 'buffer';
 import * as dotenv from 'dotenv';
 dotenv.config();
+
+const AUTOMAKER_BRANDS = new Set([
+    'Honda', 'Toyota', 'Ford', 'GM', 'Chevrolet', 'GMC', 'Nissan', 'Mazda', 'Subaru',
+    'Hyundai', 'Kia', 'BMW', 'Mercedes-Benz', 'Audi', 'Volkswagen', 'Volvo', 'Acura',
+    'Lexus', 'Infiniti', 'Chrysler', 'Dodge', 'Jeep', 'Ram', 'Cadillac', 'Buick',
+    'Pontiac', 'Oldsmobile', 'Saturn', 'Mitsubishi', 'Isuzu', 'Suzuki',
+]);
+
+const AFTERMARKET_BRANDS = new Set([
+    'TYC', 'Depo', 'Sherman', 'Anzo', 'Spec-D', 'Dorman', 'Replace', 'Action Crash',
+    'Eagle', 'Spyder', 'CAPA', 'NSF', 'Keystone', 'LKQ', 'Evan Fischer',
+]);
+
+const JUNK_BRANDS = new Set(['unbranded', 'does not apply', 'generic', 'n/a', 'none']);
+
+function cleanBrand(brand: string | undefined, sellerUsername: string | undefined): string | undefined {
+    if (!brand) return undefined;
+    const lower = brand.toLowerCase();
+    if (JUNK_BRANDS.has(lower)) return undefined;
+    if (sellerUsername && lower === sellerUsername.toLowerCase()) return undefined;
+    return brand;
+}
+
+function splitAspect(value: string | undefined): string[] {
+    if (!value) return [];
+    return value.split(',').map(s => s.trim()).filter(Boolean);
+}
 
 interface eBayConfig {
     vendorId: string;
@@ -15,6 +47,10 @@ interface eBayConfig {
     tokenExpiresAt?: Date;
     inFlightToken: boolean;
     retryAfterMs?: number;
+    ruName?: string;
+    refreshToken?: string;
+    userToken?: string;
+    userTokenExpiresAt?: Date;
 }
 
 export default class eBayVendorClient implements VendorInventoryClient {
@@ -28,6 +64,8 @@ export default class eBayVendorClient implements VendorInventoryClient {
         apiSecret: process.env.EBAY_API_SECRET!,
         apiUrl: process.env.EBAY_API_URL! || 'https://api.ebay.com',
         inFlightToken: false,
+        ruName: process.env.EBAY_RU_NAME || undefined,
+        refreshToken: process.env.EBAY_USER_REFRESH_TOKEN || undefined,
     };
 
     mapRecord(raw: UnknownRawVendorRecord): VendorRecord {
@@ -37,6 +75,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         }
 
         const item = record.data;
+        const aspects = buildAspectMap(item);
 
         // Convert price string to minor units (e.g. "$12.99" → 1299 cents)
         const priceMinorMin = item.price?.value
@@ -47,7 +86,6 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const firstShipping = item.shippingOptions?.[0];
         let estimatedShipTimeHours: number | undefined;
         if (firstShipping?.minEstimatedDeliveryDate) {
-            // averages min and max estimated delivery dates
             const deliveryMs = (
                 new Date(firstShipping.minEstimatedDeliveryDate).getTime() +
                 new Date(firstShipping.maxEstimatedDeliveryDate ?? firstShipping.minEstimatedDeliveryDate).getTime()) /
@@ -57,31 +95,76 @@ export default class eBayVendorClient implements VendorInventoryClient {
             }
         }
 
-        const availableQty = item.estimatedAvailability?.estimatedAvailableQuantity ?? null;
+        const availableQty = item.estimatedAvailabilities?.[0]?.estimatedRemainingQuantity ?? null;
 
-        // Extract fitments from compatibilityProperties (PRODUCT,COMPATIBILITY fieldgroups).
-        // The Browse API returns a flat list of {name, value} per compatible vehicle.
-        const compatProps = item.compatibilityProperties ?? [];
-        const getProp = (n: string) => compatProps.find(p => p.name === n)?.value;
-        const make = getProp('Make');
-        const model = getProp('Model');
-        const year = parseInt(getProp('Year') ?? '', 10);
-        const fitments = make && model && !isNaN(year)
-            ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine'), constraint: mapEbayConstraint(item.product?.aspects) }]
-            : [];
+        // Fitments: prefer Trading API full matrix (_fitments), fall back to single-vehicle compatibilityProperties.
+        const tradingFitments = item._fitments;
+        let fitments: VendorRecord['fitments'];
+        if (tradingFitments && tradingFitments.length > 0) {
+            const constraint = mapEbayConstraint(aspects);
+            fitments = tradingFitments.map(f => ({ ...f, constraint }));
+        } else {
+            const compatProps = item.compatibilityProperties ?? [];
+            const getProp = (n: string) => compatProps.find(p => p.name === n)?.value;
+            const make  = getProp('Make');
+            const model = getProp('Model');
+            const year  = parseInt(getProp('Year') ?? '', 10);
+            fitments = make && model && !isNaN(year)
+                ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine'), constraint: mapEbayConstraint(aspects) }]
+                : [];
+        }
 
-        // Prefer the MPN from product.aspects; fall back to top-level mpn, then legacyItemId.
-        const mpn = item.product?.aspects?.['Manufacturer Part Number']?.[0]
-            ?? item.mpn;
-        const brand = item.product?.brand ?? item.brand;
-        const identifiers: VendorRecord['identifiers'] = mpn
-            ? [{ type: 'AFTERMARKET', value: mpn, manufacturer: brand }]
-            : [{ type: 'INTERCHANGE', value: item.legacyItemId ?? item.itemId }];
+        // Brand: drop junk values so cross-refs are clean and manufacturer column is accurate.
+        const rawBrand = aspects['Brand']?.[0] ?? item.brand;
+        const brand = cleanBrand(rawBrand, item.seller?.username);
+        const certification = mapEbayCertification(aspects);
+
+        // Identifiers: emit own-MPN first (representative), then cross-refs.
+        // Own-MPN gets manufacturer: brand. Cross-refs get manufacturer: undefined —
+        // a Honda OEM number is Honda's number, not the aftermarket seller's.
+        const identifiers: VendorRecord['identifiers'] = [];
+        const seen = new Set<string>();
+        const addId = (type: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE', value: string, manufacturer?: string, cert?: 'CAPA' | 'NSF') => {
+            const key = `${type}:${value.trim()}`;
+            if (seen.has(key) || !value.trim()) return;
+            seen.add(key);
+            identifiers.push({ type, value: value.trim(), manufacturer, certification: cert });
+        };
+
+        // 1. Own MPN — representative; type derived from brand identity
+        const mpn = aspects['Manufacturer Part Number']?.[0] ?? item.mpn;
+        if (mpn) {
+            const mpnType = AUTOMAKER_BRANDS.has(brand ?? '') ? 'OEM'
+                : AFTERMARKET_BRANDS.has(brand ?? '') ? 'AFTERMARKET'
+                : 'INTERCHANGE';
+            addId(mpnType, mpn, brand ?? undefined, certification);
+        }
+
+        // 2. Partslink cross-refs (aftermarket standard)
+        for (const raw of splitAspect(aspects['Partslink Number']?.[0] ?? aspects['Part Link Number']?.[0])) {
+            addId('AFTERMARKET', raw, undefined, certification);
+        }
+
+        // 3. OEM cross-refs
+        for (const raw of splitAspect(aspects['OE/OEM Part Number']?.[0] ?? aspects['OE Number']?.[0])) {
+            addId('OEM', raw, undefined, undefined);
+        }
+
+        // 4. Fallback: use eBay item ID as opaque interchange reference
+        if (identifiers.length === 0) {
+            addId('INTERCHANGE', item.legacyItemId ?? item.itemId, brand ?? undefined);
+        }
+
+        const category = mapEbayCategory(item.categoryPath, item.primaryCategory?.categoryName);
+        const descText = `${item.title ?? ''} ${item.description ?? ''}`;
 
         return {
             part: {
-                name: item.title ?? item.itemId,
-                category: item.primaryCategory?.categoryName ?? 'Auto Parts',
+                name: aspects['Part Name']?.[0] ?? (item.title ?? item.itemId).slice(0, 80),
+                category,
+                position: mapEbayPosition(category, aspects['Placement on Vehicle']?.[0]),
+                description: stripHtml(item.shortDescription ?? item.description ?? '').slice(0, 500) || undefined,
+                weightGrams: parseItemWeightGrams(aspects['Item Weight']?.[0]),
             },
             identifiers,
             fitments,
@@ -89,13 +172,20 @@ export default class eBayVendorClient implements VendorInventoryClient {
                 vendorListingExternalId: item.itemId,
                 sourceUrl: item.itemWebUrl,
                 condition: mapEbayCondition(item.condition) as PartCondition,
-                description: item.shortDescription ?? item.description,
+                description: item.shortDescription
+                    ? stripHtml(item.shortDescription)
+                    : item.description ? stripHtml(item.description).slice(0, 2000) || undefined : undefined,
                 quantityAvailable: availableQty !== null ? availableQty : undefined,
                 availabilityStatus: mapEbayItemAvailability(availableQty) as AvailabilityStatus,
                 priceMinorMin,
                 currency: item.price?.currency ?? 'USD',
                 estimatedShipTimeHours,
                 images: item.additionalImages?.map(img => ({ url: img.imageUrl })),
+                warehouseLocation: item.itemLocation?.country
+                    ? { country: item.itemLocation.country, stateOrProvince: item.itemLocation.stateOrProvince, city: item.itemLocation.city, postalCode: item.itemLocation.postalCode }
+                    : undefined,
+                sourceVehicleVin: extractVin(descText),
+                sourceDamageType: extractDamageType(descText),
             },
         };
     }
@@ -116,13 +206,31 @@ export default class eBayVendorClient implements VendorInventoryClient {
         // detailMap is keyed by requested itemId; null = 404 (drop), undefined key = other failure (use summary).
         const detailMap = await this.fetchItemDetailsConcurrent(itemIds);
 
-        const records = itemIds.flatMap(id => {
+        // Build enriched records first, collecting legacyItemIds for the Trading API call.
+        const enrichedRecords: Array<{ id: string; record: UnknownRawVendorRecord; legacyItemId?: string }> = [];
+        for (const id of itemIds) {
             const entry = detailMap.get(id);
-            if (entry === null) return [];                          // 404: item gone, drop
-            if (entry === undefined) return [];                    // not in map (shouldn't happen)
-            if (entry.record !== null) return [entry.record];     // success: use enriched detail
-            const summary = summaryById.get(id);                  // other failure: fall back to summary
-            return summary ? [summary] : [];
+            if (entry === null) continue;                          // 404: item gone, drop
+            if (entry === undefined) continue;                     // not in map (shouldn't happen)
+            const record = entry.record !== null ? entry.record : summaryById.get(id);
+            if (!record) continue;
+            const legacyItemId = (record as { legacyItemId?: string }).legacyItemId;
+            enrichedRecords.push({ id, record, legacyItemId });
+        }
+
+        // Fetch full compatibility matrices from Trading API for all items concurrently.
+        // Skip in sandbox — sandbox OAuth tokens are rejected by the production Trading API.
+        const isSandbox = this.config.apiUrl.includes('sandbox');
+        const compatMap = isSandbox ? new Map() : await this.fetchItemCompatibilitiesConcurrent(
+            enrichedRecords.flatMap(r => r.legacyItemId ? [r.legacyItemId] : []),
+        );
+
+        const records = enrichedRecords.map(({ record, legacyItemId }) => {
+            const fitments = legacyItemId ? compatMap.get(legacyItemId) : undefined;
+            if (fitments && fitments.length > 0) {
+                return { ...(record as object), _fitments: fitments } as UnknownRawVendorRecord;
+            }
+            return record;
         });
 
         return { records, nextCursor, hasMore };
@@ -148,6 +256,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                 headers: {
                     'Authorization': `Bearer ${this.config.token}`,
                 },
+                signal: AbortSignal.timeout(30_000),
             });
         } catch (error) {
             throw new VendorError('NETWORK_ERROR', `eBay network error: ${error instanceof Error ? error.message : String(error)}`, this.config.retryAfterMs, error);
@@ -200,6 +309,32 @@ export default class eBayVendorClient implements VendorInventoryClient {
     }
 
     /**
+     * Fetch full vehicle compatibility matrices from the Trading API for a list of legacy item IDs.
+     * Requires a user access token (Authorization Code flow) — skipped with a warning when
+     * EBAY_USER_REFRESH_TOKEN is not configured.
+     */
+    private async fetchItemCompatibilitiesConcurrent(
+        legacyItemIds: string[],
+        concurrency = 5,
+    ): Promise<Map<string, Awaited<ReturnType<typeof fetchEbayItemCompatibilities>>>> {
+        const userToken = await this.authenticateUser();
+        if (!userToken) {
+            console.warn('[ebay] skipping Trading API enrichment — EBAY_USER_REFRESH_TOKEN not set');
+            return new Map();
+        }
+        const resultMap = new Map<string, Awaited<ReturnType<typeof fetchEbayItemCompatibilities>>>();
+        const queue = [...legacyItemIds];
+        const worker = async () => {
+            while (queue.length > 0) {
+                const id = queue.shift()!;
+                resultMap.set(id, await fetchEbayItemCompatibilities(id, userToken, this.config.apiUrl));
+            }
+        };
+        await Promise.all(Array.from({ length: concurrency }, worker));
+        return resultMap;
+    }
+
+    /**
      * Fetch item details for a single item ID.
      * @param itemId - The item ID to fetch details for.
      * @param retriesLeft - The number of retries to make.
@@ -212,11 +347,11 @@ export default class eBayVendorClient implements VendorInventoryClient {
         let res: Response;
         try {
             res = await fetch(
-                `${this.config.apiUrl}/buy/browse/v1/item/${encodeURIComponent(itemId)}?fieldgroups=PRODUCT,COMPATIBILITY`,
-                { headers: { Authorization: `Bearer ${this.config.token}` } },
+                `${this.config.apiUrl}/buy/browse/v1/item/${encodeURIComponent(itemId)}?fieldgroups=PRODUCT`,
+                { headers: { Authorization: `Bearer ${this.config.token}` }, signal: AbortSignal.timeout(30_000) },
             );
         } catch {
-            return { record: null }; // network blip — fall back to summary
+            return { record: null }; // network blip or timeout — fall back to summary
         }
 
         if (res.status === 429 && retriesLeft > 0) {
@@ -229,9 +364,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
             return null; // listing ended — caller drops the item entirely
         }
 
-        if (!res.ok) {
-            return { record: null }; // other server error — fall back to summary
-        }
+        if (!res.ok) return { record: null };
 
         const body = await res.json();
         const parsed = eBayItemSchema.safeParse(body);
@@ -244,6 +377,45 @@ export default class eBayVendorClient implements VendorInventoryClient {
         } else {
             return { valid: false, expiresAt: undefined };
         }
+    }
+
+    /**
+     * Mint (or reuse cached) user access token by exchanging the stored refresh token.
+     * Returns undefined when EBAY_USER_REFRESH_TOKEN is not set — callers should
+     * treat a missing user token as "skip Trading API enrichment".
+     */
+    public async authenticateUser(): Promise<string | undefined> {
+        if (!this.config.refreshToken) return undefined;
+        if (this.config.userToken && this.config.userTokenExpiresAt && this.config.userTokenExpiresAt > new Date()) {
+            return this.config.userToken;
+        }
+        let res: Response;
+        try {
+            res = await fetch(`${this.config.apiUrl}/identity/v1/oauth2/token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `Basic ${Buffer.from(`${this.config.apiKey}:${this.config.apiSecret}`).toString('base64')}`,
+                },
+                body: new URLSearchParams({
+                    grant_type: 'refresh_token',
+                    refresh_token: this.config.refreshToken,
+                    scope: 'https://api.ebay.com/oauth/api_scope',
+                }),
+                signal: AbortSignal.timeout(15_000),
+            });
+        } catch (error) {
+            console.warn(`[ebay] user-token refresh network error: ${error instanceof Error ? error.message : String(error)}`);
+            return undefined;
+        }
+        if (!res.ok) {
+            console.warn(`[ebay] user-token refresh failed (${res.status}): ${await res.text()}`);
+            return undefined;
+        }
+        const data = await res.json();
+        this.config.userToken = data.access_token;
+        this.config.userTokenExpiresAt = new Date(Date.now() + data.expires_in * 1000);
+        return this.config.userToken;
     }
 
     /**
@@ -275,6 +447,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                     grant_type: 'client_credentials',
                     scope: "https://api.ebay.com/oauth/api_scope",
                 }),
+                signal: AbortSignal.timeout(15_000),
             });
         } catch (error) {
             this.config.inFlightToken = false;
