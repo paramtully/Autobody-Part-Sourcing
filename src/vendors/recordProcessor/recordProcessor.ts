@@ -297,34 +297,27 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         const conflictRecords: ResolvedRecord[] = [];
 
         for (const record of records) {
-            // Vote-count: each identifier contributes all the parts it's already linked to.
-            // Own-MPN is always first in identifiers[] so its partIdentifierId is picked preferentially.
-            const votes = new Map<string, number>();
+            const recordPartIds: Set<string> = new Set();
             let recordPartIdentifierId: string | undefined;
 
             for (const identifier of record.identifiers) {
-                const partIds = valueToPartIds.get(identifier.value) ?? new Set<string>();
-                for (const partId of partIds) votes.set(partId, (votes.get(partId) ?? 0) + 1);
+                const partIds = valueToPartIds.get(identifier.value) ?? [];
+                for (const partId of partIds) recordPartIds.add(partId);
                 if (!recordPartIdentifierId) recordPartIdentifierId = valueToPartIdentifierId.get(identifier.value);
             }
-
-            const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
-            const isTie = ranked.length >= 2 && ranked[0][1] === ranked[1][1];
-            const winnerPartId = (!isTie && ranked[0]) ? ranked[0][0] : undefined;
-            const recordPartIds: Set<string> = winnerPartId ? new Set([winnerPartId]) : new Set(votes.keys());
 
             const resolved: ResolvedRecord = {
                 record,
                 partIds: recordPartIds,
                 partIdentifierId: recordPartIdentifierId ?? '',
-                isValid: !isTie,
-                isNew: votes.size === 0,
+                isValid: recordPartIds.size <= 1,
+                isNew: recordPartIds.size === 0,
             };
 
-            if (isTie) {
-                console.warn(`Skipping record ${record.listing.vendorListingExternalId}: identifiers tie across ${ranked.length} parts`);
+            if (recordPartIds.size > 1) {
+                console.warn(`Skipping record ${record.listing.vendorListingExternalId}: identifiers resolve to ${recordPartIds.size} parts`);
                 conflictRecords.push(resolved);
-            } else if (votes.size > 0) {
+            } else if (recordPartIds.size === 1) {
                 existingRecords.push(resolved);
             } else {
                 newRecords.push(resolved);

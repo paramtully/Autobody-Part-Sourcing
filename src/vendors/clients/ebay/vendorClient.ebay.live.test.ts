@@ -45,7 +45,7 @@ live('eBay live smoke', () => {
     if (page.hasMore) {
       expect(typeof page.nextCursor).toBe('string');
     }
-  });
+  }, 60_000);
 
   it('mapRecord(records[0]) returns a well-shaped VendorRecord', async () => {
     const page = await client.fetchInventoryPage();
@@ -61,6 +61,15 @@ live('eBay live smoke', () => {
       .toContain(record.listing.condition);
     expect(['IN_STOCK', 'LOW_STOCK', 'BACKORDER', 'SPECIAL_ORDER', 'UNKNOWN'])
       .toContain(record.listing.availabilityStatus);
+  }, 60_000);
+
+  it('authenticateUser() returns a valid token when EBAY_USER_REFRESH_TOKEN is set', async () => {
+    if (!process.env['EBAY_USER_REFRESH_TOKEN']) {
+      console.warn('Skipping — EBAY_USER_REFRESH_TOKEN not set; run the bootstrap test first');
+      return;
+    }
+    const token = await client.authenticateUser();
+    expect(token).toBeTruthy();
   });
 
   it('eBay user-OAuth bootstrap (consent URL + code exchange)', async () => {
@@ -71,7 +80,8 @@ live('eBay live smoke', () => {
     const { apiKey, apiSecret, apiUrl } = client.config;
 
     if (!code) {
-      const consent = 'https://auth.ebay.com/oauth2/authorize?' + new URLSearchParams({
+      const authHost = apiUrl.includes('sandbox') ? 'https://auth.sandbox.ebay.com' : 'https://auth.ebay.com';
+      const consent = `${authHost}/oauth2/authorize?` + new URLSearchParams({
         client_id: apiKey,
         response_type: 'code',
         redirect_uri: ruName,
@@ -135,6 +145,8 @@ live('eBay live smoke', () => {
       '| itemId | title | brand | product.brand | condition | categoryPath | aspect keys | compatProps | trading status | trading Ack | trading compat count |',
       '|---|---|---|---|---|---|---|---|---|---|---|',
     ];
+    const tradingStatuses: number[] = [];
+    let totalCompatCount = 0;
 
     for (const s of search.itemSummaries ?? []) {
       const itemId: string = s.itemId;
@@ -171,12 +183,14 @@ live('eBay live smoke', () => {
           body: xmlBody,
         });
         tradingStatus = String(tradingRes.status);
+        tradingStatuses.push(tradingRes.status);
         const xmlText = await tradingRes.text();
         fs.writeFileSync(path.join(outDir, `${legacyItemId}.trading.xml`), xmlText);
         const parsed = xmlParser.parse(xmlText);
         fs.writeFileSync(path.join(outDir, `${legacyItemId}.trading.parsed.json`), JSON.stringify(parsed, null, 2));
         ack = parsed?.GetItemResponse?.Ack ?? 'n/a';
         compatCount = (parsed?.GetItemResponse?.Item?.ItemCompatibilityList?.Compatibility ?? []).length;
+        totalCompatCount += compatCount;
       }
 
       const title = String(browseJson.title ?? '').slice(0, 60);
@@ -195,7 +209,10 @@ live('eBay live smoke', () => {
     fs.writeFileSync(path.join(outDir, '_INDEX.md'), rows.join('\n') + '\n');
     console.log(`\nDumped ${(search.itemSummaries ?? []).length} items → ${outDir}\n`);
 
-    // Not asserting on content — this test is a diagnostic dump, not a correctness check.
-    expect(true).toBe(true);
+    if (userToken) {
+      expect(tradingStatuses.length).toBeGreaterThan(0);
+      expect(tradingStatuses.every(s => s === 200)).toBe(true);
+      expect(totalCompatCount).toBeGreaterThan(0);
+    }
   }, 120_000);
 });
