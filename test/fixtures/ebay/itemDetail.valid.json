@@ -1,29 +1,28 @@
 {
-  "itemId": "v1|123456789|0",
-  "legacyItemId": "123456789",
-  "title": "2018 Honda Civic Front Bumper Cover OEM",
-  "shortDescription": "Genuine OEM front bumper cover for 2018 Honda Civic.",
-  "price": { "value": "129.99", "currency": "USD" },
-  "condition": "Used",
-  "conditionId": "3000",
-  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Body Parts & Mirrors|Bumpers & Bumper Parts",
-  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers & Bumper Parts" },
-  "brand": "Honda",
-  "seller": { "username": "honda_parts_direct", "feedbackPercentage": "99.5", "feedbackScore": 12345 },
-  "itemWebUrl": "https://www.ebay.com/itm/123456789",
+  "itemId": "v1|277644944264|0",
+  "legacyItemId": "277644944264",
+  "title": "2019-2021 Nissan Altima Front Bumper Cover w/o Sensor Holes Primed NI1000323",
+  "shortDescription": "Front bumper cover for 2019-2021 Nissan Altima. Primed and ready for paint.",
+  "price": { "value": "84.95", "currency": "USD" },
+  "condition": "New",
+  "conditionId": "1000",
+  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Bumpers & Bumper Components|Bumpers & Reinforcements",
+  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers & Reinforcements" },
+  "seller": { "username": "texas-e-parts", "feedbackPercentage": "98.6", "feedbackScore": 4521 },
+  "itemWebUrl": "https://www.ebay.com/itm/277644944264",
   "estimatedAvailabilities": [
     {
       "deliveryOptions": ["SHIP_TO_HOME"],
-      "estimatedRemainingQuantity": 1,
-      "estimatedSoldQuantity": 4,
+      "estimatedRemainingQuantity": 5,
+      "estimatedSoldQuantity": 12,
       "availabilityThresholdType": "MORE_THAN",
-      "availabilityThreshold": 0
+      "availabilityThreshold": 2
     }
   ],
   "shippingOptions": [
     {
       "shippingCostType": "FLAT",
-      "shippingCost": { "value": "25.00", "currency": "USD" },
+      "shippingCost": { "value": "0.00", "currency": "USD" },
       "minEstimatedDeliveryDate": "2030-01-05T00:00:00.000Z",
       "maxEstimatedDeliveryDate": "2030-01-10T00:00:00.000Z"
     }
@@ -33,18 +32,25 @@
     { "imageUrl": "https://i.ebayimg.com/images/g/def/s-l500.jpg" }
   ],
   "compatibilityProperties": [
-    { "name": "Make", "value": "Honda" },
-    { "name": "Model", "value": "Civic" },
-    { "name": "Year", "value": "2018" },
-    { "name": "Trim", "value": "EX" }
+    { "name": "Make", "value": "Nissan" },
+    { "name": "Model", "value": "Altima" },
+    { "name": "Year", "value": "2020" },
+    { "name": "Trim", "value": "SE" }
   ],
+  "itemLocation": {
+    "city": "San Jose",
+    "stateOrProvince": "California",
+    "country": "US",
+    "postalCode": "945**"
+  },
   "localizedAspects": [
-    { "name": "Brand", "value": "Honda" },
-    { "name": "Part Name", "value": "Bumper Cover" },
+    { "name": "Brand", "value": "Texas-E-Parts" },
+    { "name": "Part Name", "value": "Front Bumper Cover" },
+    { "name": "Type", "value": "Front Bumper Cover Complete" },
     { "name": "Placement on Vehicle", "value": "Front" },
-    { "name": "Manufacturer Part Number", "value": "04711-TBA-A90ZZ" },
-    { "name": "Partslink Number", "value": "HO1000296" },
-    { "name": "OE/OEM Part Number", "value": "71101-TBA-A50ZZ" },
+    { "name": "Manufacturer Part Number", "value": "NI1039163, NI1000323, NI1200292, NI1038163" },
+    { "name": "Interchange Part Number", "value": "62256-6CA0A, 622566CA0A, 62022-6CG0H" },
+    { "name": "OE/OEM Part Number", "value": "622566CA0A, 620226CG0H" },
     { "name": "Parking Sensors", "value": "Without" }
   ]
 }

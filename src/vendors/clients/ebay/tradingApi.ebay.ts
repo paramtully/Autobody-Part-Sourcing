@@ -1,15 +1,9 @@
 import { XMLParser } from 'fast-xml-parser';
-
-export interface EbayFitment {
-    make: string;
-    model: string;
-    year: number;
-    trim?: string;
-    engine?: string;
-}
+import type { Fitment } from '../vendorRecord';
 
 const parser = new XMLParser({
     ignoreAttributes: true,
+    parseTagValue: false,
     isArray: (name) => name === 'Compatibility' || name === 'NameValueList',
 });
 
@@ -22,7 +16,7 @@ export async function fetchEbayItemCompatibilities(
     legacyItemId: string,
     token: string,
     apiUrl: string,
-): Promise<EbayFitment[]> {
+): Promise<Fitment[]> {
     const baseUrl = apiUrl.replace('api.sandbox.ebay.com', 'api.ebay.com'); // Trading API has no sandbox equivalent
     const xml = `<?xml version="1.0" encoding="utf-8"?><GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><ItemID>${legacyItemId}</ItemID><IncludeItemCompatibilityList>true</IncludeItemCompatibilityList><DetailLevel>ReturnAll</DetailLevel></GetItemRequest>`;
 
@@ -38,7 +32,7 @@ export async function fetchEbayItemCompatibilities(
                 'X-EBAY-API-IAF-TOKEN': token,
             },
             body: xml,
-            signal: AbortSignal.timeout(30_000),
+            signal: AbortSignal.timeout(10_000),
         });
     } catch {
         return [];

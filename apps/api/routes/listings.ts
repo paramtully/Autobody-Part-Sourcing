@@ -91,7 +91,7 @@ router.get("/by-fitment", (req: Request, res: Response) => {
 router.get('/by-part-number/:partNumber', async (req: Request, res: Response) => {
 
     const cursor = req.query?.cursor !== undefined ? parseInt(req.query.cursor as string) : undefined;
-    const partNumber: string = (req.params?.partNumber as string)?.trim().toUpperCase();
+    const partNumber: string = (req.params?.partNumber as string)?.trim().toUpperCase().replace(/-/g, '');
 
     if (cursor !== undefined && isNaN(cursor)) {
         return res.status(400).json({ error: 'Invalid cursor' });

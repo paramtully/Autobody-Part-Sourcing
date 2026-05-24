@@ -10,6 +10,15 @@ export type FitmentConstraint = (typeof fitmentConstraintEnum.enumValues)[number
 
 export type UnknownRawVendorRecord = unknown;
 
+export type Fitment = {
+  make: string;
+  model: string;
+  year: number;
+  trim?: string;
+  engine?: string;
+  constraint?: FitmentConstraint;
+}
+
 export interface VendorRecord {
     part: {
       name: string;
@@ -25,14 +34,7 @@ export interface VendorRecord {
       manufacturer?: string;    // e.g. "Honda", "TYC", "Depo" — brand lives here
       certification?: 'CAPA' | 'NSF';
     }>;
-    fitments: Array<{
-      make: string;
-      model: string;
-      year: number;
-      trim?: string;
-      engine?: string;
-      constraint?: FitmentConstraint;
-    }>;
+    fitments: Array<Fitment>;
     listing: {
       vendorListingExternalId: string;
       sourceUrl?: string;

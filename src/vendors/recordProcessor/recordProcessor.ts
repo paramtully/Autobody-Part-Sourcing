@@ -1,4 +1,4 @@
-import { VendorRecord } from "../clients/vendorRecord";
+import { VendorRecord, Fitment } from "../clients/vendorRecord";
 import { db, parts, partIdentifiers, fitments, partFitments, listings, listingImages, warehouseLocations } from "@repo/db";
 import { inArray, and, eq, sql } from "drizzle-orm";
 
@@ -6,6 +6,7 @@ export interface BatchResult {
   succeeded: number;
   failed: number;
   skipped: number;
+  newParts: Array<{ partId: string; vendorListingExternalId: string }>;
 }
 
 interface ResolvedRecord {
@@ -20,6 +21,7 @@ interface ResolvedRecord {
 // validates records and upserts safe records to db
 export interface RecordProcessor {
     validateAndUpsert(records: VendorRecord[], vendorId: string): Promise<BatchResult>;
+    appendFitmentsToParts(enrichments: Array<{ partId: string; fitments: Fitment[] }>): Promise<void>;
 }
 
 
@@ -41,12 +43,21 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         // Phase 4: single transaction
         let succeeded = 0;
         let failed = 0;
+        const newParts: BatchResult['newParts'] = [];
 
         type ListingQueueItem = { partIdentifierId: string; record: VendorRecord; confidence: number };
         const listingQueue: ListingQueueItem[] = [];
         const warehouseLocationCache = new Map<string, string>();
 
         await db.transaction(async (tx) => {
+
+            // 4-pre: bulk-resolve all unique fitments across the batch in a single roundtrip.
+            // Without this, Trading API matrices (1k–2k fitments per record) cause tens of
+            // thousands of sequential INSERTs and stall the transaction for minutes.
+            await this.bulkResolveFitments(tx, [...newRecords, ...existingRecords], fitmentKeyToId);
+
+            // Accumulate all (partId, fitmentId) pairs for one batched partFitments insert at the end.
+            const partFitmentPairs: Array<{ partId: string; fitmentId: string }> = [];
 
             // 4a: insert one part per new-part group, then fitments + identifiers
             for (const [, group] of newPartGroups) {
@@ -64,29 +75,15 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                     .onConflictDoUpdate({ target: [parts.name, parts.category], set: { updatedAt: sql`now()` } })
                     .returning({ id: parts.id });
 
-                // deduplicate fitments across the whole group before writing
+                // collect (partId, fitmentId) pairs; deduped per group via Set
                 const groupFitmentKeys = new Set<string>();
                 for (const r of group) {
                     for (const f of r.record.fitments) {
                         const key = this.fitmentKey(f);
                         if (groupFitmentKeys.has(key)) continue;
                         groupFitmentKeys.add(key);
-
-                        let fitmentId = fitmentKeyToId.get(key);
-                        if (!fitmentId) {
-                            const [inserted] = await tx
-                                .insert(fitments)
-                                .values({ make: f.make, model: f.model, year: f.year, constraint: f.constraint ?? null, trim: f.trim ?? null, engine: f.engine ?? null })
-                                .onConflictDoNothing()
-                                .returning({ id: fitments.id });
-                            if (inserted) {
-                                fitmentId = inserted.id;
-                                fitmentKeyToId.set(key, fitmentId);
-                            }
-                        }
-                        if (fitmentId) {
-                            await tx.insert(partFitments).values({ partId: newPart.id, fitmentId }).onConflictDoNothing();
-                        }
+                        const fitmentId = fitmentKeyToId.get(key);
+                        if (fitmentId) partFitmentPairs.push({ partId: newPart.id, fitmentId });
                     }
                 }
 
@@ -107,6 +104,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                     const piId = insertedPIs[0]?.id;
                     if (!piId) { failed++; continue; }
                     listingQueue.push({ partIdentifierId: piId, record: r.record, confidence: r.confidence ?? 0.5 });
+                    newParts.push({ partId: newPart.id, vendorListingExternalId: r.record.listing.vendorListingExternalId });
                 }
             }
 
@@ -137,25 +135,19 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 }
 
                 for (const f of r.record.fitments) {
-                    const key = this.fitmentKey(f);
-                    let fitmentId = fitmentKeyToId.get(key);
-                    if (!fitmentId) {
-                        const [inserted] = await tx
-                            .insert(fitments)
-                            .values({ make: f.make, model: f.model, year: f.year, constraint: f.constraint ?? null, trim: f.trim ?? null, engine: f.engine ?? null })
-                            .onConflictDoNothing()
-                            .returning({ id: fitments.id });
-                        if (inserted) {
-                            fitmentId = inserted.id;
-                            fitmentKeyToId.set(key, fitmentId);
-                        }
-                    }
-                    if (fitmentId) {
-                        await tx.insert(partFitments).values({ partId, fitmentId }).onConflictDoNothing();
-                    }
+                    const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
+                    if (fitmentId) partFitmentPairs.push({ partId, fitmentId });
                 }
 
                 listingQueue.push({ partIdentifierId: r.partIdentifierId, record: r.record, confidence: r.confidence ?? 0.9 });
+            }
+
+            // 4-mid: bulk-insert all part_fitments pairs in chunks (PG param limit ≈ 65k → 2 cols × 30k rows)
+            if (partFitmentPairs.length > 0) {
+                const CHUNK = 30_000;
+                for (let i = 0; i < partFitmentPairs.length; i += CHUNK) {
+                    await tx.insert(partFitments).values(partFitmentPairs.slice(i, i + CHUNK)).onConflictDoNothing();
+                }
             }
 
             // 4c: upsert listings, collect returned ids for image writes
@@ -234,7 +226,61 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
             }
         });
 
-        return { succeeded, failed, skipped: conflictRecords.length };
+        return { succeeded, failed, skipped: conflictRecords.length, newParts };
+    }
+
+    /**
+     * Appends fitments to already-inserted parts. Called after validateAndUpsert when
+     * the pipeline has fetched enrichment data (e.g. Trading API) for new parts only.
+     */
+    async appendFitmentsToParts(enrichments: Array<{ partId: string; fitments: Fitment[] }>): Promise<void> {
+        if (enrichments.length === 0) return;
+
+        // Collect all unique fitments across enrichments.
+        const allFitments = enrichments.flatMap(e => e.fitments);
+        if (allFitments.length === 0) return;
+
+        await db.transaction(async (tx) => {
+            // Resolve fitment IDs (insert missing rows, return IDs for all).
+            const fitmentKeyToId = new Map<string, string>();
+            const seen = new Set<string>();
+            const toInsert: Array<typeof fitments.$inferInsert> = [];
+            for (const f of allFitments) {
+                const key = this.fitmentKey(f);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                toInsert.push({ make: f.make, model: f.model, year: f.year, constraint: f.constraint ?? null, trim: f.trim ?? null, engine: f.engine ?? null });
+            }
+            const CHUNK = 5_000;
+            for (let i = 0; i < toInsert.length; i += CHUNK) {
+                const rows = await tx
+                    .insert(fitments)
+                    .values(toInsert.slice(i, i + CHUNK))
+                    .onConflictDoUpdate({
+                        target: [fitments.make, fitments.model, fitments.year, fitments.constraint, fitments.trim, fitments.engine],
+                        set: { make: sql`excluded.make` },
+                    })
+                    .returning({ id: fitments.id, make: fitments.make, model: fitments.model, year: fitments.year, constraint: fitments.constraint, trim: fitments.trim, engine: fitments.engine });
+                for (const row of rows) fitmentKeyToId.set(this.fitmentKey(row), row.id);
+            }
+
+            // Build (partId, fitmentId) pairs and bulk insert.
+            const pairs: Array<{ partId: string; fitmentId: string }> = [];
+            for (const { partId, fitments: pFitments } of enrichments) {
+                const seen2 = new Set<string>();
+                for (const f of pFitments) {
+                    const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
+                    if (!fitmentId || seen2.has(fitmentId)) continue;
+                    seen2.add(fitmentId);
+                    pairs.push({ partId, fitmentId });
+                }
+            }
+            if (pairs.length === 0) return;
+            const PAIR_CHUNK = 30_000;
+            for (let i = 0; i < pairs.length; i += PAIR_CHUNK) {
+                await tx.insert(partFitments).values(pairs.slice(i, i + PAIR_CHUNK)).onConflictDoNothing();
+            }
+        });
     }
 
     // Phase 1a: bulk-fetch existing partIdentifiers for all identifier values in the batch
@@ -284,6 +330,45 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
             fitmentKeyToId.set(this.fitmentKey(f), f.id);
         }
         return fitmentKeyToId;
+    }
+
+    // Phase 1c (in-tx): bulk-insert all unique fitments missing from fitmentKeyToId,
+    // populating their IDs back into the map. Uses onConflictDoUpdate with a no-op SET
+    // so RETURNING gives us IDs for both inserted and pre-existing rows in a single call.
+    private async bulkResolveFitments(
+        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        records: ResolvedRecord[],
+        fitmentKeyToId: Map<string, string>,
+    ): Promise<void> {
+        const seen = new Set<string>();
+        const toInsert: Array<typeof fitments.$inferInsert> = [];
+        for (const r of records) {
+            for (const f of r.record.fitments) {
+                const key = this.fitmentKey(f);
+                if (fitmentKeyToId.has(key) || seen.has(key)) continue;
+                seen.add(key);
+                toInsert.push({
+                    make: f.make, model: f.model, year: f.year,
+                    constraint: f.constraint ?? null, trim: f.trim ?? null, engine: f.engine ?? null,
+                });
+            }
+        }
+        if (toInsert.length === 0) return;
+
+        // PG max parameters per query is 65535; 6 cols × ~10k rows is safe.
+        const CHUNK = 5_000;
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+            const slice = toInsert.slice(i, i + CHUNK);
+            const rows = await tx
+                .insert(fitments)
+                .values(slice)
+                .onConflictDoUpdate({
+                    target: [fitments.make, fitments.model, fitments.year, fitments.constraint, fitments.trim, fitments.engine],
+                    set: { make: sql`excluded.make` },                            // no-op SET so RETURNING fires for conflicts too
+                })
+                .returning({ id: fitments.id, make: fitments.make, model: fitments.model, year: fitments.year, constraint: fitments.constraint, trim: fitments.trim, engine: fitments.engine });
+            for (const row of rows) fitmentKeyToId.set(this.fitmentKey(row), row.id);
+        }
     }
 
     // Phase 2: categorize records by # distinct parts their identifiers resolve to

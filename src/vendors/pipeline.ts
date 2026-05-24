@@ -29,6 +29,18 @@ export class VendorPipeline {
         const mapped = page.records.map(r => this.client.mapRecord(r));
         const result = await this.processor.validateAndUpsert(mapped, this.client.vendorId);
 
+        if (result.newParts.length > 0 && this.client.fetchFitmentsForNewParts) {
+            const externalIds = result.newParts.map(p => p.vendorListingExternalId);
+            const fitmentMap = await this.client.fetchFitmentsForNewParts(externalIds);
+            const enrichments = result.newParts.flatMap(p => {
+                const pFitments = fitmentMap.get(p.vendorListingExternalId) ?? [];
+                return pFitments.length > 0 ? [{ partId: p.partId, fitments: pFitments }] : [];
+            });
+            if (enrichments.length > 0) {
+                await this.processor.appendFitmentsToParts(enrichments);
+            }
+        }
+
         return { result, nextCursor: page.nextCursor, hasMore: page.hasMore };
     }
 

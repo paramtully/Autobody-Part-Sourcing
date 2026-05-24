@@ -107,7 +107,7 @@ export const eBayItemSchema = z.object({
     localizedAspects: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
     // Injected by fetchInventoryPage after Trading API enrichment — not from eBay directly
     _fitments: z.array(z.object({
-        make: z.string(), model: z.string(), year: z.number(),
+        make: z.string(), model: z.coerce.string(), year: z.number(),
         trim: z.string().optional(), engine: z.string().optional(),
     })).optional(),
 }).passthrough();
@@ -203,11 +203,12 @@ export function mapEbayConstraint(aspects?: EbayAspects): FitmentConstraint | un
 
 // ── Category mapping ──────────────────────────────────────────────
 
-/** Maps eBay categoryPath / categoryName to a part_category enum value.
- *  Checks the full category breadcrumb (most-specific part last) for the
- *  first matching keyword pattern, falling back to 'OTHER'. */
-export function mapEbayCategory(categoryPath?: string, categoryName?: string): string {
-    const text = [categoryPath, categoryName].filter(Boolean).join(' ').toLowerCase();
+/** Maps eBay categoryPath / categoryName (+ optional free-text hints) to a part_category enum value.
+ *  Hints (e.g. aspects['Type'] + item.title) are prepended so they take priority over the broad
+ *  breadcrumb — this resolves misclassifications like "Quarter Panel" under a "Fenders" path.
+ *  Checks most-specific patterns first, falling back to 'OTHER'. */
+export function mapEbayCategory(categoryPath?: string, categoryName?: string, hints?: string): string {
+    const text = [hints, categoryPath, categoryName].filter(Boolean).join(' ').toLowerCase();
 
     // Most-specific patterns first to avoid false positives on broader terms
     if (/bumper\s*(cover|fascia)/.test(text)) return 'BUMPER_COVER';
@@ -218,6 +219,11 @@ export function mapEbayCategory(categoryPath?: string, categoryName?: string): s
 
     if (/fender\s*liner|wheel\s*(well|arch)\s*liner/.test(text)) return 'FENDER_LINER';
     if (/wheel\s*(well|arch)/.test(text)) return 'WHEEL_ARCH';
+    // Specific panel sub-types must come before generic 'fender' to avoid false positives
+    // when a "Quarter Panel" hint appears alongside a "Fenders" categoryPath.
+    if (/quarter\s*panel/.test(text)) return 'QUARTER_PANEL';
+    if (/rocker\s*panel/.test(text)) return 'ROCKER_PANEL';
+    if (/roof\s*panel/.test(text)) return 'ROOF_PANEL';
     if (/fender/.test(text)) return 'FENDER';
 
     if (/door\s*handle/.test(text)) return 'DOOR_HANDLE';
@@ -234,10 +240,6 @@ export function mapEbayCategory(categoryPath?: string, categoryName?: string): s
     if (/trunk\s*hinge/.test(text)) return 'TRUNK_HINGE';
     if (/trunk\s*latch/.test(text)) return 'TRUNK_LATCH';
     if (/trunk\s*(lid|deck)/.test(text)) return 'TRUNK_LID';
-
-    if (/quarter\s*panel/.test(text)) return 'QUARTER_PANEL';
-    if (/rocker\s*panel/.test(text)) return 'ROCKER_PANEL';
-    if (/roof\s*panel/.test(text)) return 'ROOF_PANEL';
 
     if (/headlight|head\s*lamp/.test(text)) return 'HEADLIGHT';
     if (/taillight|tail\s*lamp|tail\s*light/.test(text)) return 'TAILLIGHT';
@@ -304,14 +306,19 @@ export function mapEbayItemAvailability(estimatedAvailableQuantity?: number | nu
 
 // ── Position mapping ──────────────────────────────────────────────
 
-/** Maps eBay "Placement on Vehicle" aspect + category to a part_position enum value. */
+/** Maps eBay "Placement on Vehicle" aspect + category to a part_position enum value.
+ *  Returns undefined only when placement is truly ambiguous (pair listing: both left+right
+ *  or both front+rear). Single-side values like "Rear, Left" parse correctly. */
 export function mapEbayPosition(category: string, placement?: string): string | undefined {
-    if (!placement || placement.includes(',')) return undefined;
+    if (!placement) return undefined;
     const p = placement.toLowerCase();
     const isLeft  = /\b(left|driver|lh)\b/.test(p);
     const isRight = /\b(right|passenger|rh)\b/.test(p);
     const isFront = /\bfront\b/.test(p);
     const isRear  = /\b(rear|back)\b/.test(p);
+
+    // Truly ambiguous: pair listing ("Left, Right") or universal kit ("Front, Rear")
+    if ((isLeft && isRight) || (isFront && isRear)) return undefined;
 
     switch (category) {
         case 'HEADLIGHT':    return isLeft ? 'HEADLIGHT_LEFT'    : isRight ? 'HEADLIGHT_RIGHT'    : undefined;
@@ -369,6 +376,66 @@ export function extractDamageType(text: string): string | undefined {
     if (/flood/i.test(text))             return 'FLOOD';
     if (/hail/i.test(text))              return 'HAIL';
     if (/salvage/i.test(text))           return 'SALVAGE';
+    return undefined;
+}
+
+// ── Identifier classification ─────────────────────────────────────
+
+// Partslink prefixes: CAPA/NSF standard 2-letter prefix encodes manufacturer.
+// Conservative set seeded from real captured data + CAPA prefix list.
+const PARTSLINK_PREFIX_TO_MAKE: Record<string, string> = {
+    HO: 'Honda',    AC: 'Acura',
+    FO: 'Ford',     LR: 'Lincoln',
+    GM: 'GM',       CV: 'Chevrolet',
+    NI: 'Nissan',   IN: 'Infiniti',
+    TO: 'Toyota',   LX: 'Lexus',   SC: 'Scion',
+    HY: 'Hyundai',  KI: 'Kia',
+    MA: 'Mazda',    SU: 'Subaru',
+    MB: 'Mercedes-Benz', BM: 'BMW', AU: 'Audi', VW: 'Volkswagen',
+    JE: 'Jeep',     CH: 'Chrysler', DG: 'Dodge', RA: 'Ram',
+    MI: 'Mitsubishi', VO: 'Volvo',
+};
+
+// OEM number formats, anchored. Order matters — more specific first.
+// Seeded from real data captured during investigation (see docs/ebay-data-quality-investigation.md).
+// All values are dash-normalized before matching (dashes stripped at ingestion).
+const OEM_PATTERNS: Array<{ pattern: RegExp; manufacturer: string }> = [
+    { pattern: /^\d{5}[A-Z0-9]{3}[A-Z0-9]{4}[A-Z]{0,2}$/, manufacturer: 'Honda' },         // 04711TBAA90ZZ (was 04711-TBA-A90ZZ)
+    { pattern: /^[0-9][A-Z]\d[A-Z]\d{5}[A-Z]?$/,          manufacturer: 'Ford' },           // 8G1Z13008F
+    { pattern: /^\d{5}[A-Z0-9]{4}[A-Z]$/,                 manufacturer: 'Nissan' },          // 622566CA0A (was 62256-6CA0A)
+    { pattern: /^A?\d{10}$/,                               manufacturer: 'Mercedes-Benz' },  // 9068810101
+    { pattern: /^\d{10}$/,                                 manufacturer: 'Toyota' },          // 5381112345 (was 53811-12345)
+    // Hyundai/Kia share a Mobis-derived scheme; cannot distinguish by pattern alone
+    { pattern: /^\d{5}[A-Z0-9]{5}$/,                      manufacturer: 'Hyundai/Kia' },    // 92101D5000
+    { pattern: /^\d{8}$/,                                  manufacturer: 'GM' },              // 84790367 — keep LAST (loosest)
+];
+
+const UPC_EAN_PATTERN = /^\d{12,14}$/;
+
+export interface ClassifiedIdentifier {
+    type: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE';
+    manufacturer?: string;
+}
+
+/** Pattern-classifies a raw part number value.
+ *  Returns null for UPCs/EANs (caller should drop entirely).
+ *  Returns undefined when no pattern matches (caller falls back to aspect-key default + brand list).
+ *  Returns a ClassifiedIdentifier when a known OEM or Partslink pattern is detected. */
+export function classifyIdentifier(value: string): ClassifiedIdentifier | null | undefined {
+    const v = value.trim();
+    if (!v) return undefined;
+    if (UPC_EAN_PATTERN.test(v)) return null;   // drop barcodes
+
+    // Partslink: exactly 2 uppercase letters + 7 digits
+    const partslink = /^([A-Z]{2})(\d{7})$/.exec(v);
+    if (partslink && PARTSLINK_PREFIX_TO_MAKE[partslink[1]]) {
+        return { type: 'AFTERMARKET', manufacturer: PARTSLINK_PREFIX_TO_MAKE[partslink[1]] };
+    }
+
+    for (const { pattern, manufacturer } of OEM_PATTERNS) {
+        if (pattern.test(v)) return { type: 'OEM', manufacturer };
+    }
+
     return undefined;
 }
 

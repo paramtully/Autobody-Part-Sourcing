@@ -11,6 +11,8 @@ import { mockFetchSequence, restoreFetch } from '../../../../test/setup/mockFetc
 const validItem = require('../../../../test/fixtures/ebay/itemDetail.valid.json');
 const invalidItem = require('../../../../test/fixtures/ebay/itemDetail.invalid.json');
 const nompnItem = require('../../../../test/fixtures/ebay/itemDetail.nompn.json');
+const quarterPanelItem = require('../../../../test/fixtures/ebay/itemDetail.quarterPanel.json');
+const pairItem = require('../../../../test/fixtures/ebay/itemDetail.pair.json');
 const searchPage = require('../../../../test/fixtures/ebay/itemSummarySearch.json');
 const oauthToken = require('../../../../test/fixtures/ebay/oauthToken.json');
 
@@ -48,29 +50,39 @@ describe('mapRecord', () => {
     const client = makeClient();
     const record = client.mapRecord(validItem);
 
-    // part — name from "Part Name" aspect, not raw title; position from "Placement on Vehicle"
-    expect(record.part.name).toBe('Bumper Cover');
-    expect(record.part.category).toBe('BUMPER');
+    // part — name from "Part Name" aspect; Type hint "Front Bumper Cover Complete" → BUMPER_COVER
+    expect(record.part.name).toBe('Front Bumper Cover');
+    expect(record.part.category).toBe('BUMPER_COVER');
     expect(record.part.position).toBe('FRONT_BUMPER');
 
-    // identifiers: own MPN first (OEM, Honda brand), then Partslink (AFTERMARKET), then OE cross-ref (OEM)
-    expect(record.identifiers).toHaveLength(3);
-    expect(record.identifiers[0]).toMatchObject({ type: 'OEM', value: '04711-TBA-A90ZZ', manufacturer: 'Honda' });
-    expect(record.identifiers[1]).toMatchObject({ type: 'AFTERMARKET', value: 'HO1000296', manufacturer: undefined });
-    expect(record.identifiers[2]).toMatchObject({ type: 'OEM', value: '71101-TBA-A50ZZ', manufacturer: undefined });
+    // identifiers: 4 Partslink NI... (AFTERMARKET/Nissan) + OE cross-refs + Interchange
+    // Classifier detects NI prefix → AFTERMARKET/Nissan despite brand being "Texas-E-Parts"
+    expect(record.identifiers.length).toBeGreaterThanOrEqual(7);
+    expect(record.identifiers.some(i => i.value === 'NI1039163')).toBe(true);
+    expect(record.identifiers.some(i => i.value === 'NI1000323')).toBe(true);
+    const ni = record.identifiers.find(i => i.value === 'NI1039163')!;
+    expect(ni.type).toBe('AFTERMARKET');
+    expect(ni.manufacturer).toBe('Nissan');  // classifier detects NI prefix; brand ignored
 
     // listing
-    expect(record.listing.vendorListingExternalId).toBe('v1|123456789|0');
-    expect(record.listing.sourceUrl).toBe('https://www.ebay.com/itm/123456789');
-    expect(record.listing.priceMinorMin).toBe(12999);
+    expect(record.listing.vendorListingExternalId).toBe('v1|277644944264|0');
+    expect(record.listing.sourceUrl).toBe('https://www.ebay.com/itm/277644944264');
+    expect(record.listing.priceMinorMin).toBe(8495);
     expect(record.listing.currency).toBe('USD');
-    expect(record.listing.condition).toBe('RECYCLED');  // "Used"
-    expect(record.listing.description).toBe('Genuine OEM front bumper cover for 2018 Honda Civic.');
-    expect(record.listing.quantityAvailable).toBe(1);
-    expect(record.listing.availabilityStatus).toBe('LOW_STOCK');
+    expect(record.listing.condition).toBe('NEW_AFTERMARKET');
+    expect(record.listing.description).toBe('Front bumper cover for 2019-2021 Nissan Altima. Primed and ready for paint.');
+    expect(record.listing.quantityAvailable).toBe(5);
+    expect(record.listing.availabilityStatus).toBe('IN_STOCK');
     expect(record.listing.estimatedShipTimeHours).toBeGreaterThan(0);
     expect(record.listing.images).toHaveLength(2);
     expect(record.listing.images![0]!.url).toBe('https://i.ebayimg.com/images/g/abc/s-l500.jpg');
+    // masked postal code stripped
+    expect(record.listing.warehouseLocation?.postalCode).toBeUndefined();
+    expect(record.listing.warehouseLocation?.country).toBe('US');
+
+    // fitments
+    expect(record.fitments.length).toBe(1);
+    expect(record.fitments[0]).toMatchObject({ make: 'Nissan', model: 'Altima', year: 2020 });
   });
 
   it('brand cleanup — junk brand yields undefined manufacturer on fallback identifier', () => {
@@ -87,15 +99,18 @@ describe('mapRecord', () => {
 
   it('brand cleanup — seller username as brand yields undefined manufacturer', () => {
     const client = makeClient();
+    // Use the fixture seller's own username as the Brand value — should be cleaned to undefined
     const item = {
       ...validItem,
-      localizedAspects: [{ name: 'Brand', value: 'honda_parts_direct' }],
+      localizedAspects: [{ name: 'Brand', value: 'texas-e-parts' }],
     };
     const record = client.mapRecord(item);
+    // No MPN/Partslink/OE aspects → falls back to legacyItemId INTERCHANGE
+    expect(record.identifiers[0]!.type).toBe('INTERCHANGE');
     expect(record.identifiers[0]!.manufacturer).toBeUndefined();
   });
 
-  it('comma-separated Partslink emits one identifier per value', () => {
+  it('comma-separated Partslink emits one identifier per value with correct manufacturer', () => {
     const client = makeClient();
     const item = {
       ...validItem,
@@ -106,10 +121,15 @@ describe('mapRecord', () => {
       ],
     };
     const record = client.mapRecord(item);
-    const partslinks = record.identifiers.filter(i => i.type === 'AFTERMARKET' && !i.manufacturer);
+    // Classifier detects HO prefix → AFTERMARKET/Honda regardless of source aspect
+    const partslinks = record.identifiers.filter(i => i.value === 'HO1000296' || i.value === 'HO1241185');
     expect(partslinks).toHaveLength(2);
     expect(partslinks[0]!.value).toBe('HO1000296');
+    expect(partslinks[0]!.type).toBe('AFTERMARKET');
+    expect(partslinks[0]!.manufacturer).toBe('Honda');
     expect(partslinks[1]!.value).toBe('HO1241185');
+    expect(partslinks[1]!.type).toBe('AFTERMARKET');
+    expect(partslinks[1]!.manufacturer).toBe('Honda');
   });
 
   it('multi-vehicle placement (comma in value) yields undefined position', () => {
@@ -168,7 +188,41 @@ describe('mapRecord', () => {
     const client = makeClient();
     const record = client.mapRecord(validItem);
     expect(record.fitments.length).toBe(1);
-    expect(record.fitments[0]).toMatchObject({ make: 'Honda', model: 'Civic', year: 2018 });
+    expect(record.fitments[0]).toMatchObject({ make: 'Nissan', model: 'Altima', year: 2020 });
+  });
+
+  it('quarter panel under Panels|Fenders categoryPath maps via Type aspect', () => {
+    const client = makeClient();
+    const record = client.mapRecord(quarterPanelItem);
+    // "Quarter Panel" Type hint overrides the broad "Fenders" categoryPath
+    expect(record.part.category).toBe('QUARTER_PANEL');
+    // "Rear, Left" placement: not ambiguous (rear ≠ front, left ≠ right) → QUARTER_PANEL_LEFT
+    expect(record.part.position).toBe('QUARTER_PANEL_LEFT');
+  });
+
+  it('pair listing with Placement "Left, Right" yields undefined position', () => {
+    const client = makeClient();
+    const record = client.mapRecord(pairItem);
+    // Both left AND right specified → truly ambiguous pair → no position
+    expect(record.part.position).toBeUndefined();
+    expect(record.part.category).toBe('HEADLIGHT');
+  });
+
+  it('junk identifier values are dropped before reaching the record', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [
+        { name: 'Manufacturer Part Number', value: '100 Pcs Automotive Push Type Retainer Kit' },
+        { name: 'Brand', value: 'Unbranded' },
+      ],
+    };
+    const record = client.mapRecord(item);
+    // No identifier value should be the full product-description string
+    expect(record.identifiers.every(i => !i.value.includes('Push Type Retainer'))).toBe(true);
+    // Falls back to legacyItemId INTERCHANGE since all tokens are junk or empty
+    const hasInterchange = record.identifiers.some(i => i.type === 'INTERCHANGE');
+    expect(hasInterchange).toBe(true);
   });
 
   it('fitments empty when Year is missing from compatibilityProperties', () => {
@@ -184,6 +238,62 @@ describe('mapRecord', () => {
     const record = client.mapRecord(item);
     expect(record.fitments).toEqual([]);
   });
+
+  it('condition — "New" with AFTERMARKET Partslink identifiers stays NEW_AFTERMARKET', () => {
+    const client = makeClient();
+    const record = client.mapRecord(validItem);
+    // NI-prefixed Partslinks → AFTERMARKET; no OEM upgrade
+    expect(record.listing.condition).toBe('NEW_AFTERMARKET');
+  });
+
+  it('condition — "New" with Honda OEM-pattern MPN upgrades to NEW_OEM', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      condition: 'New',
+      localizedAspects: [
+        { name: 'Manufacturer Part Number', value: '04711-TBA-A90ZZ' },
+        { name: 'Brand', value: 'Honda' },
+      ],
+    };
+    const record = client.mapRecord(item);
+    // Honda OEM pattern → identifiers[0].type === 'OEM' → condition upgraded
+    expect(record.identifiers[0]!.type).toBe('OEM');
+    expect(record.listing.condition).toBe('NEW_OEM');
+  });
+
+  it('position from title when Placement aspect absent', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      title: '2018 Honda Civic Left Headlight Assembly',
+      localizedAspects: [
+        { name: 'Part Name', value: 'Headlight' },
+        { name: 'Type', value: 'Headlight' },
+        // No Placement on Vehicle aspect
+      ],
+      categoryPath: 'eBay Motors|Parts & Accessories|Lighting & Lamps|Headlights',
+      primaryCategory: { categoryId: '33710', categoryName: 'Headlight Assemblies' },
+    };
+    const record = client.mapRecord(item);
+    expect(record.part.category).toBe('HEADLIGHT');
+    expect(record.part.position).toBe('HEADLIGHT_LEFT');
+  });
+
+  it('pure-alphabetic MPN tokens are dropped by isJunkIdentifier', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      localizedAspects: [
+        { name: 'Manufacturer Part Number', value: 'Civic Sedan Bumper' },
+        { name: 'Brand', value: 'Unbranded' },
+      ],
+    };
+    const record = client.mapRecord(item);
+    // All tokens are pure-alpha (no digit) → none become identifiers; falls back to INTERCHANGE
+    expect(record.identifiers.every(i => !/^[a-zA-Z ]+$/.test(i.value))).toBe(true);
+    expect(record.identifiers.some(i => i.type === 'INTERCHANGE')).toBe(true);
+  });
 });
 
 // ── fetchInventoryPage ────────────────────────────────────────────────────────
@@ -198,10 +308,11 @@ describe('fetchInventoryPage', () => {
     expect(Array.isArray(result.records)).toBe(true);
     expect(result.records.length).toBe(2);
     expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toBe('200');
+    expect(result.nextCursor).toBe('0:200');
   });
 
-  it('last page — hasMore: false when no next link', async () => {
+  it('last page — hasMore: false when no next link on last category', async () => {
+    // Cursor '5:0' = last category (index 5), offset 0. No next link → all categories exhausted.
     const lastPage = { ...searchPage, next: undefined };
     mockFetchSequence([
       { body: oauthToken },
@@ -210,18 +321,19 @@ describe('fetchInventoryPage', () => {
       { body: validItem },
     ]);
     const client = makeClient();
-    const result = await client.fetchInventoryPage('200');
+    const result = await client.fetchInventoryPage('5:0');
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
   });
 
-  it('empty itemSummaries — throws VendorError(INVALID_REQUEST)', async () => {
+  it('empty itemSummaries on last category — throws VendorError(INVALID_REQUEST)', async () => {
+    // Must be at the last category (5:0) for the no-data guard to fire.
     mockFetchSequence([
       { body: oauthToken },
-      { body: { ...searchPage, itemSummaries: [] } },
+      { body: { ...searchPage, itemSummaries: [], next: undefined } },
     ]);
     const client = makeClient();
-    await expect(client.fetchInventoryPage()).rejects.toMatchObject({
+    await expect(client.fetchInventoryPage('5:0')).rejects.toMatchObject({
       type: 'INVALID_REQUEST',
     });
   });
@@ -341,35 +453,42 @@ describe('mapEbayItemAvailability', () => {
 // ── mapEbayCategory ───────────────────────────────────────────────────────────
 
 describe('mapEbayCategory', () => {
-  const cases: Array<[string | undefined, string | undefined, string]> = [
-    // categoryPath drives the match
-    ['eBay Motors|Parts & Accessories|Body Parts|Bumpers & Bumper Parts', undefined, 'BUMPER'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Bumper Covers', undefined, 'BUMPER_COVER'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Fenders', undefined, 'FENDER'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Fender Liners', undefined, 'FENDER_LINER'],
-    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Headlights', undefined, 'HEADLIGHT'],
-    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Taillights', undefined, 'TAILLIGHT'],
-    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Fog Lights', undefined, 'FOG_LIGHT'],
-    ['eBay Motors|Parts & Accessories|Glass|Windshields', undefined, 'WINDSHIELD'],
-    ['eBay Motors|Parts & Accessories|Glass|Rear Window Glass', undefined, 'REAR_WINDOW'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Doors', undefined, 'DOOR'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Door Handles', undefined, 'DOOR_HANDLE'],
-    ['eBay Motors|Parts & Accessories|Body Parts|Hoods', undefined, 'HOOD'],
-    ['eBay Motors|Parts & Accessories|Mirrors|Side View Mirrors', undefined, 'MIRROR'],
-    ['eBay Motors|Parts & Accessories|Mirrors|Mirror Glass', undefined, 'MIRROR_GLASS'],
+  // [categoryPath, categoryName, hints, expected]
+  const cases: Array<[string | undefined, string | undefined, string | undefined, string]> = [
+    // categoryPath drives the match (hints=undefined)
+    ['eBay Motors|Parts & Accessories|Body Parts|Bumpers & Bumper Parts', undefined, undefined, 'BUMPER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Bumper Covers', undefined, undefined, 'BUMPER_COVER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Fenders', undefined, undefined, 'FENDER'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Fender Liners', undefined, undefined, 'FENDER_LINER'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Headlights', undefined, undefined, 'HEADLIGHT'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Taillights', undefined, undefined, 'TAILLIGHT'],
+    ['eBay Motors|Parts & Accessories|Lighting & Lamps|Fog Lights', undefined, undefined, 'FOG_LIGHT'],
+    ['eBay Motors|Parts & Accessories|Glass|Windshields', undefined, undefined, 'WINDSHIELD'],
+    ['eBay Motors|Parts & Accessories|Glass|Rear Window Glass', undefined, undefined, 'REAR_WINDOW'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Doors', undefined, undefined, 'DOOR'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Door Handles', undefined, undefined, 'DOOR_HANDLE'],
+    ['eBay Motors|Parts & Accessories|Body Parts|Hoods', undefined, undefined, 'HOOD'],
+    ['eBay Motors|Parts & Accessories|Mirrors|Side View Mirrors', undefined, undefined, 'MIRROR'],
+    ['eBay Motors|Parts & Accessories|Mirrors|Mirror Glass', undefined, undefined, 'MIRROR_GLASS'],
     // categoryName as fallback when path is absent
-    [undefined, 'Bumpers & Bumper Parts', 'BUMPER'],
-    [undefined, 'Headlights', 'HEADLIGHT'],
-    [undefined, 'Grilles', 'GRILLE'],
-    [undefined, 'Moldings', 'MOLDING'],
+    [undefined, 'Bumpers & Bumper Parts', undefined, 'BUMPER'],
+    [undefined, 'Headlights', undefined, 'HEADLIGHT'],
+    [undefined, 'Grilles', undefined, 'GRILLE'],
+    [undefined, 'Moldings', undefined, 'MOLDING'],
     // unrecognized → OTHER
-    [undefined, undefined, 'OTHER'],
-    [undefined, 'Auto Parts', 'OTHER'],
-    ['eBay Motors|Parts & Accessories', 'Auto Parts', 'OTHER'],
+    [undefined, undefined, undefined, 'OTHER'],
+    [undefined, 'Auto Parts', undefined, 'OTHER'],
+    ['eBay Motors|Parts & Accessories', 'Auto Parts', undefined, 'OTHER'],
+    // hints override broad categoryPath: "Bumper cover" hint beats "Bumpers & Reinforcements" breadcrumb
+    ['eBay Motors|Parts & Accessories|Bumpers & Reinforcements', undefined, 'Bumper cover', 'BUMPER_COVER'],
+    // "Quarter Panel" hint beats the "Fenders" categoryPath
+    ['eBay Motors|Parts & Accessories|Panels|Fenders', undefined, 'Quarter Panel', 'QUARTER_PANEL'],
+    // no hint — broad categoryPath alone → BUMPER (not BUMPER_COVER)
+    ['eBay Motors|Parts & Accessories|Bumpers & Reinforcements', undefined, undefined, 'BUMPER'],
   ];
 
-  it.each(cases)('categoryPath=%s, categoryName=%s → %s', (path, name, expected) => {
-    expect(mapEbayCategory(path, name)).toBe(expected);
+  it.each(cases)('categoryPath=%s, categoryName=%s, hints=%s → %s', (path, name, hints, expected) => {
+    expect(mapEbayCategory(path, name, hints)).toBe(expected);
   });
 });
 

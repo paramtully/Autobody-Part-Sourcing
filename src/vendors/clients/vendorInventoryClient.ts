@@ -1,4 +1,4 @@
-import { VendorRecord, UnknownRawVendorRecord } from "./vendorRecord";
+import { VendorRecord, UnknownRawVendorRecord, Fitment } from "./vendorRecord";
 
 
 export interface VendorInventoryClient {
@@ -43,6 +43,18 @@ export interface VendorInventoryClient {
      * @returns The vendor record formatted to match the domain model.
      */
     mapRecord(raw: UnknownRawVendorRecord): VendorRecord;
+
+    /**
+     * Optional: fetch full vehicle fitment matrices for newly-discovered parts from an
+     * enrichment API (e.g. eBay Trading API). Called only after dedup, so API quota
+     * is spent only on parts not yet in the database.
+     *
+     * @param vendorListingExternalIds - The external listing IDs for new parts
+     * @returns Map from vendorListingExternalId to its fitments
+     */
+    fetchFitmentsForNewParts?(
+        vendorListingExternalIds: string[],
+    ): Promise<Map<string, Fitment[]>>;
 }
 
 

@@ -7,7 +7,7 @@
 
 import { VendorError } from "../clients/vendorError";
 import { VendorInventoryClient } from "../clients/vendorInventoryClient";
-import { UnknownRawVendorRecord, VendorRecord } from "../clients/vendorRecord";
+import { Fitment, UnknownRawVendorRecord, VendorRecord } from "../clients/vendorRecord";
 
 export interface RetryOptions {
     maxAttempts?: number;       // default 3
@@ -33,7 +33,12 @@ export class RetryableVendorClient implements VendorInventoryClient {
         this.vendorId = client.vendorId;
         this.inner = client;
         this.options = options;
+        if (client.fetchFitmentsForNewParts) {
+            this.fetchFitmentsForNewParts = (ids) => client.fetchFitmentsForNewParts!(ids);
+        }
     }
+
+    fetchFitmentsForNewParts?: (vendorListingExternalIds: string[]) => Promise<Map<string, Fitment[]>>;
 
     async fetchInventoryPage(cursor?: string): Promise<{
         records: UnknownRawVendorRecord[];

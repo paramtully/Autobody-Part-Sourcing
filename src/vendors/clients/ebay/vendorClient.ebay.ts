@@ -1,12 +1,12 @@
 import { VendorInventoryClient } from "../vendorInventoryClient";
 import { VendorError, VendorErrorType } from "../vendorError";
-import { AvailabilityStatus, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
+import { AvailabilityStatus, Fitment, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
 import {
     eBayItemSchema, buildAspectMap, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint, mapEbayCategory,
     mapEbayPosition, parseItemWeightGrams, mapEbayCertification,
-    extractVin, extractDamageType, stripHtml,
+    extractVin, extractDamageType, stripHtml, classifyIdentifier,
 } from "./schema.ebay.item";
-import { fetchEbayItemCompatibilities } from "./tradingApi";
+import { fetchEbayItemCompatibilities } from "./tradingApi.ebay";
 import { Buffer } from 'buffer';
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -16,6 +16,7 @@ const AUTOMAKER_BRANDS = new Set([
     'Hyundai', 'Kia', 'BMW', 'Mercedes-Benz', 'Audi', 'Volkswagen', 'Volvo', 'Acura',
     'Lexus', 'Infiniti', 'Chrysler', 'Dodge', 'Jeep', 'Ram', 'Cadillac', 'Buick',
     'Pontiac', 'Oldsmobile', 'Saturn', 'Mitsubishi', 'Isuzu', 'Suzuki',
+    'Lincoln', 'Scion', 'Tesla', 'Genesis',
 ]);
 
 const AFTERMARKET_BRANDS = new Set([
@@ -23,7 +24,24 @@ const AFTERMARKET_BRANDS = new Set([
     'Eagle', 'Spyder', 'CAPA', 'NSF', 'Keystone', 'LKQ', 'Evan Fischer',
 ]);
 
-const JUNK_BRANDS = new Set(['unbranded', 'does not apply', 'generic', 'n/a', 'none']);
+const JUNK_BRANDS = new Set([
+    'unbranded', 'does not apply', 'generic', 'n/a', 'none',
+    'aftermarket', 'oe replacement', 'oe style',
+]);
+
+const JUNK_IDENTIFIER_VALUES = new Set([
+    'na', 'n/a', 'no', 'none', 'does not apply', 'unbranded', 'universal',
+    'aftermarket', 'oe replacement', 'oe style',
+]);
+
+function isJunkIdentifier(value: string): boolean {
+    const v = value.trim().toLowerCase();
+    if (v.length < 3 || v.length > 40) return true;   // descriptions and single-char stubs
+    if (JUNK_IDENTIFIER_VALUES.has(v)) return true;
+    if (!/[a-z0-9]/.test(v)) return true;              // pure punctuation
+    if (!/\d/.test(v)) return true;                    // real part numbers always contain a digit
+    return false;
+}
 
 function cleanBrand(brand: string | undefined, sellerUsername: string | undefined): string | undefined {
     if (!brand) return undefined;
@@ -35,7 +53,7 @@ function cleanBrand(brand: string | undefined, sellerUsername: string | undefine
 
 function splitAspect(value: string | undefined): string[] {
     if (!value) return [];
-    return value.split(',').map(s => s.trim()).filter(Boolean);
+    return value.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
 }
 
 interface eBayConfig {
@@ -55,9 +73,21 @@ interface eBayConfig {
 
 export default class eBayVendorClient implements VendorInventoryClient {
     readonly vendorId = 'ebay';
-    private readonly DEFAULT_PAGE_SIZE = 200;
-    private readonly MOTORS_CATEGORY_ID = '6028';           //Motors → Parts & Accessories
-    private readonly DEFAULT_SEARCH_QUERY = 'auto body part';
+    private readonly DEFAULT_PAGE_SIZE = 20;
+    // Targeted body-panel sub-categories (eBay Motors category tree).
+    // These drive precise inventory rather than the noisy 'auto body part' keyword search.
+    // NOTE: reset any in-progress ingestion_runs rows before deploying — the offset cursor
+    // no longer corresponds to the same search scope.
+    // The Browse API enforces a limit of 1 category per request, so we cycle through
+    // categories sequentially, encoding position as "{categoryIndex}:{offset}" in the cursor.
+    private readonly TARGETED_CATEGORY_IDS = [
+        '33637',  // Bumpers & Reinforcements
+        '33714',  // Fenders / Panels
+        '33710',  // Headlight Assemblies
+        '33642',  // Side View Mirrors
+        '33556',  // Doors
+        '33567',  // Hoods
+    ];
     readonly config: eBayConfig = {
         vendorId: this.vendorId,
         apiKey: process.env.EBAY_API_KEY!,
@@ -97,22 +127,16 @@ export default class eBayVendorClient implements VendorInventoryClient {
 
         const availableQty = item.estimatedAvailabilities?.[0]?.estimatedRemainingQuantity ?? null;
 
-        // Fitments: prefer Trading API full matrix (_fitments), fall back to single-vehicle compatibilityProperties.
-        const tradingFitments = item._fitments;
-        let fitments: VendorRecord['fitments'];
-        if (tradingFitments && tradingFitments.length > 0) {
-            const constraint = mapEbayConstraint(aspects);
-            fitments = tradingFitments.map(f => ({ ...f, constraint }));
-        } else {
-            const compatProps = item.compatibilityProperties ?? [];
-            const getProp = (n: string) => compatProps.find(p => p.name === n)?.value;
-            const make  = getProp('Make');
-            const model = getProp('Model');
-            const year  = parseInt(getProp('Year') ?? '', 10);
-            fitments = make && model && !isNaN(year)
-                ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine'), constraint: mapEbayConstraint(aspects) }]
-                : [];
-        }
+        // Fitments: single-vehicle compatibilityProperties from Browse API.
+        // Full fitment matrix is fetched separately via fetchFitmentsForNewParts (Trading API) for new parts only.
+        const compatProps = item.compatibilityProperties ?? [];
+        const getProp = (n: string) => compatProps.find(p => p.name === n)?.value;
+        const make  = getProp('Make');
+        const model = getProp('Model');
+        const year  = parseInt(getProp('Year') ?? '', 10);
+        const fitments: Fitment[] = make && model && !isNaN(year)
+            ? [{ make, model, year, trim: getProp('Trim'), engine: getProp('Engine'), constraint: mapEbayConstraint(aspects) }]
+            : [];
 
         // Brand: drop junk values so cross-refs are clean and manufacturer column is accurate.
         const rawBrand = aspects['Brand']?.[0] ?? item.brand;
@@ -120,49 +144,89 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const certification = mapEbayCertification(aspects);
 
         // Identifiers: emit own-MPN first (representative), then cross-refs.
-        // Own-MPN gets manufacturer: brand. Cross-refs get manufacturer: undefined —
-        // a Honda OEM number is Honda's number, not the aftermarket seller's.
+        // Pattern classifier wins over brand field — a Texas-E-Parts listing can still carry
+        // genuine Honda OEM numbers. Brand is only consulted when no pattern matches (MPN fallback).
         const identifiers: VendorRecord['identifiers'] = [];
         const seen = new Set<string>();
         const addId = (type: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE', value: string, manufacturer?: string, cert?: 'CAPA' | 'NSF') => {
-            const key = `${type}:${value.trim()}`;
-            if (seen.has(key) || !value.trim()) return;
+            const trimmed = value.trim().replace(/-/g, '');
+            if (!trimmed || isJunkIdentifier(trimmed)) return;
+            const key = `${type}:${trimmed}`;
+            if (seen.has(key)) return;
             seen.add(key);
-            identifiers.push({ type, value: value.trim(), manufacturer, certification: cert });
+            identifiers.push({ type, value: trimmed, manufacturer, certification: cert });
         };
 
-        // 1. Own MPN — representative; type derived from brand identity
-        const mpn = aspects['Manufacturer Part Number']?.[0] ?? item.mpn;
-        if (mpn) {
+        // emit: runs classifier first; falls back to aspect-key defaults when no pattern matches.
+        // Returns without calling addId when the value is a UPC/EAN barcode (null from classifier).
+        const emit = (
+            fallbackType: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE',
+            value: string,
+            fallbackManufacturer?: string,
+            cert?: 'CAPA' | 'NSF',
+        ) => {
+            const detected = classifyIdentifier(value.trim());
+            if (detected === null) return;  // UPC/EAN — drop
+            if (detected) {
+                addId(detected.type, value, detected.manufacturer ?? fallbackManufacturer, cert);
+            } else {
+                addId(fallbackType, value, fallbackManufacturer, cert);
+            }
+        };
+
+        // 1. Own MPN — type derived from brand identity (classifier overrides when pattern matches)
+        const mpnRaw = aspects['Manufacturer Part Number']?.[0] ?? item.mpn;
+        for (const mpn of splitAspect(mpnRaw)) {
             const mpnType = AUTOMAKER_BRANDS.has(brand ?? '') ? 'OEM'
                 : AFTERMARKET_BRANDS.has(brand ?? '') ? 'AFTERMARKET'
                 : 'INTERCHANGE';
-            addId(mpnType, mpn, brand ?? undefined, certification);
+            emit(mpnType, mpn, brand ?? undefined, certification);
         }
 
         // 2. Partslink cross-refs (aftermarket standard)
         for (const raw of splitAspect(aspects['Partslink Number']?.[0] ?? aspects['Part Link Number']?.[0])) {
-            addId('AFTERMARKET', raw, undefined, certification);
+            emit('AFTERMARKET', raw, undefined, certification);
         }
 
         // 3. OEM cross-refs
         for (const raw of splitAspect(aspects['OE/OEM Part Number']?.[0] ?? aspects['OE Number']?.[0])) {
-            addId('OEM', raw, undefined, undefined);
+            emit('OEM', raw, undefined, undefined);
         }
 
-        // 4. Fallback: use eBay item ID as opaque interchange reference
+        // 4. Interchange cross-refs
+        for (const raw of splitAspect(aspects['Interchange Part Number']?.[0])) {
+            emit('INTERCHANGE', raw, undefined, undefined);
+        }
+
+        // 5. Fallback: use eBay item ID as opaque interchange reference.
+        // Uses addId directly to bypass the UPC digit-count filter — eBay legacy IDs are
+        // 12+ digit strings that look like barcodes but are valid identifier references.
         if (identifiers.length === 0) {
             addId('INTERCHANGE', item.legacyItemId ?? item.itemId, brand ?? undefined);
         }
 
-        const category = mapEbayCategory(item.categoryPath, item.primaryCategory?.categoryName);
+        const category = mapEbayCategory(
+            item.categoryPath,
+            item.primaryCategory?.categoryName,
+            `${aspects['Type']?.[0] ?? ''} ${item.title ?? ''}`,
+        );
         const descText = `${item.title ?? ''} ${item.description ?? ''}`;
+
+        let condition = mapEbayCondition(item.condition) as PartCondition;
+        if (condition === 'NEW_AFTERMARKET' && identifiers[0]?.type === 'OEM') {
+            condition = 'NEW_OEM';
+        }
 
         return {
             part: {
                 name: aspects['Part Name']?.[0] ?? (item.title ?? item.itemId).slice(0, 80),
                 category,
-                position: mapEbayPosition(category, aspects['Placement on Vehicle']?.[0]),
+                position: mapEbayPosition(
+                    category,
+                    aspects['Placement on Vehicle']?.[0]
+                        ?? aspects['Vehicle Part Location']?.[0]
+                        ?? item.title,
+                ),
                 description: stripHtml(item.shortDescription ?? item.description ?? '').slice(0, 500) || undefined,
                 weightGrams: parseItemWeightGrams(aspects['Item Weight']?.[0]),
             },
@@ -171,7 +235,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
             listing: {
                 vendorListingExternalId: item.itemId,
                 sourceUrl: item.itemWebUrl,
-                condition: mapEbayCondition(item.condition) as PartCondition,
+                condition,
                 description: item.shortDescription
                     ? stripHtml(item.shortDescription)
                     : item.description ? stripHtml(item.description).slice(0, 2000) || undefined : undefined,
@@ -182,7 +246,12 @@ export default class eBayVendorClient implements VendorInventoryClient {
                 estimatedShipTimeHours,
                 images: item.additionalImages?.map(img => ({ url: img.imageUrl })),
                 warehouseLocation: item.itemLocation?.country
-                    ? { country: item.itemLocation.country, stateOrProvince: item.itemLocation.stateOrProvince, city: item.itemLocation.city, postalCode: item.itemLocation.postalCode }
+                    ? {
+                        country: item.itemLocation.country,
+                        stateOrProvince: item.itemLocation.stateOrProvince,
+                        city: item.itemLocation.city,
+                        postalCode: item.itemLocation.postalCode?.includes('*') ? undefined : item.itemLocation.postalCode,
+                    }
                     : undefined,
                 sourceVehicleVin: extractVin(descText),
                 sourceDamageType: extractDamageType(descText),
@@ -193,7 +262,9 @@ export default class eBayVendorClient implements VendorInventoryClient {
     async fetchInventoryPage(cursor?: string): Promise<{ records: UnknownRawVendorRecord[]; nextCursor?: string; hasMore: boolean }> {
         await this.authenticate();
 
+        const t0 = Date.now();
         const { records: summaries, nextCursor, hasMore } = await this.fetchItemSummaries(cursor);
+        console.log(`[ebay] fetched ${summaries.length} summaries in ${Date.now() - t0}ms`);
 
         // Build a summary fallback map for when detail fetches fail for non-404 reasons.
         const summaryById = new Map<string, UnknownRawVendorRecord>();
@@ -204,51 +275,51 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const itemIds = [...summaryById.keys()];
 
         // detailMap is keyed by requested itemId; null = 404 (drop), undefined key = other failure (use summary).
+        const t1 = Date.now();
         const detailMap = await this.fetchItemDetailsConcurrent(itemIds);
+        console.log(`[ebay] fetched ${itemIds.length} item details in ${Date.now() - t1}ms`);
 
-        // Build enriched records first, collecting legacyItemIds for the Trading API call.
-        const enrichedRecords: Array<{ id: string; record: UnknownRawVendorRecord; legacyItemId?: string }> = [];
+        const records: UnknownRawVendorRecord[] = [];
         for (const id of itemIds) {
             const entry = detailMap.get(id);
-            if (entry === null) continue;                          // 404: item gone, drop
-            if (entry === undefined) continue;                     // not in map (shouldn't happen)
+            if (entry === null) continue;      // 404: item gone, drop
+            if (entry === undefined) continue; // not in map (shouldn't happen)
             const record = entry.record !== null ? entry.record : summaryById.get(id);
-            if (!record) continue;
-            const legacyItemId = (record as { legacyItemId?: string }).legacyItemId;
-            enrichedRecords.push({ id, record, legacyItemId });
+            if (record) records.push(record);
         }
-
-        // Fetch full compatibility matrices from Trading API for all items concurrently.
-        // Skip in sandbox — sandbox OAuth tokens are rejected by the production Trading API.
-        const isSandbox = this.config.apiUrl.includes('sandbox');
-        const compatMap = isSandbox ? new Map() : await this.fetchItemCompatibilitiesConcurrent(
-            enrichedRecords.flatMap(r => r.legacyItemId ? [r.legacyItemId] : []),
-        );
-
-        const records = enrichedRecords.map(({ record, legacyItemId }) => {
-            const fitments = legacyItemId ? compatMap.get(legacyItemId) : undefined;
-            if (fitments && fitments.length > 0) {
-                return { ...(record as object), _fitments: fitments } as UnknownRawVendorRecord;
-            }
-            return record;
-        });
 
         return { records, nextCursor, hasMore };
     }
 
     /**
-     * Fetch item summaries from eBay.
-     * @param cursor - The cursor to use for pagination.
-     * @returns The item summaries and pagination information.
+     * Decode a compound cursor of the form "{categoryIndex}:{offset}" (or undefined for start).
+     * Returns the category index and numeric offset within that category.
      */
+    private decodeCursor(cursor?: string): { catIdx: number; offset: number } {
+        if (!cursor) return { catIdx: 0, offset: 0 };
+        const sep = cursor.indexOf(':');
+        if (sep === -1) {
+            // Legacy plain-offset cursor — treat as first category at that offset.
+            return { catIdx: 0, offset: Number(cursor) };
+        }
+        return { catIdx: Number(cursor.slice(0, sep)), offset: Number(cursor.slice(sep + 1)) };
+    }
+
     private async fetchItemSummaries(cursor?: string): Promise<{ records: UnknownRawVendorRecord[]; nextCursor?: string; hasMore: boolean }> {
+        // Browse API allows at most 1 category_ids value per request.
+        // We cycle through TARGETED_CATEGORY_IDS sequentially, encoding position in the cursor.
+        const { catIdx, offset } = this.decodeCursor(cursor);
+        const categoryId = this.TARGETED_CATEGORY_IDS[catIdx];
+        if (!categoryId) {
+            return { records: [], nextCursor: undefined, hasMore: false };
+        }
+
         let res: Response;
         try {
             const params = new URLSearchParams({
-                q: this.DEFAULT_SEARCH_QUERY,
-                category_ids: this.MOTORS_CATEGORY_ID,
+                category_ids: categoryId,
                 limit: this.DEFAULT_PAGE_SIZE.toString(),
-                offset: cursor ?? '0',
+                offset: String(offset),
             });
             const url: string = `${this.config.apiUrl}/buy/browse/v1/item_summary/search?${params}`;
             res = await fetch(url, {
@@ -272,14 +343,33 @@ export default class eBayVendorClient implements VendorInventoryClient {
             .filter((r: { success: boolean }) => r.success)
             .map((r: { data: unknown }) => r.data as UnknownRawVendorRecord);
 
-        if (records.length === 0) {
+        if (records.length === 0 && !body.next && catIdx >= this.TARGETED_CATEGORY_IDS.length - 1) {
+            // Last category is also empty — nothing left to ingest.
             throw new VendorError('INVALID_REQUEST', 'No data found in eBay response', this.config.retryAfterMs, new Error('No data found in eBay response'));
         }
 
-        const limit = Number(body.limit ?? 50)
-        const offset = Number(body.offset ?? 0)
-        const hasMore: boolean = body.next ? true : false;
-        const nextCursor = hasMore ? String(offset + limit) : undefined
+        const limit = Number(body.limit ?? this.DEFAULT_PAGE_SIZE);
+        const currentOffset = Number(body.offset ?? offset);
+        const categoryHasMore: boolean = !!body.next;
+
+        let nextCursor: string | undefined;
+        let hasMore: boolean;
+
+        if (categoryHasMore) {
+            // More pages within the same category.
+            nextCursor = `${catIdx}:${currentOffset + limit}`;
+            hasMore = true;
+        } else {
+            // Current category exhausted — advance to next category if one exists.
+            const nextCatIdx = catIdx + 1;
+            if (nextCatIdx < this.TARGETED_CATEGORY_IDS.length) {
+                nextCursor = `${nextCatIdx}:0`;
+                hasMore = true;
+            } else {
+                nextCursor = undefined;
+                hasMore = false;
+            }
+        }
 
         return { records, nextCursor, hasMore };
     }
@@ -292,7 +382,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
      */
     private async fetchItemDetailsConcurrent(
         itemIds: string[],
-        concurrency = 5,
+        concurrency = 20,
     ): Promise<Map<string, { record: UnknownRawVendorRecord | null } | null>> {
         const resultMap = new Map<string, { record: UnknownRawVendorRecord | null } | null>();
         const queue = [...itemIds];
@@ -309,29 +399,46 @@ export default class eBayVendorClient implements VendorInventoryClient {
     }
 
     /**
-     * Fetch full vehicle compatibility matrices from the Trading API for a list of legacy item IDs.
-     * Requires a user access token (Authorization Code flow) — skipped with a warning when
-     * EBAY_USER_REFRESH_TOKEN is not configured.
+     * Fetch full vehicle compatibility matrices from the Trading API for a list of new parts,
+     * keyed by vendorListingExternalId. Only called after dedup so Trading API quota is spent
+     * only on parts not yet in the database.
+     *
+     * Parses the legacy numeric ID from the modern Browse API format `v1|<legacyId>|<variation>`.
+     * Requires EBAY_USER_REFRESH_TOKEN — returns an empty map when not configured.
      */
-    private async fetchItemCompatibilitiesConcurrent(
-        legacyItemIds: string[],
-        concurrency = 5,
-    ): Promise<Map<string, Awaited<ReturnType<typeof fetchEbayItemCompatibilities>>>> {
+    async fetchFitmentsForNewParts(
+        vendorListingExternalIds: string[],
+        concurrency = 20,
+    ): Promise<Map<string, Fitment[]>> {
         const userToken = await this.authenticateUser();
         if (!userToken) {
             console.warn('[ebay] skipping Trading API enrichment — EBAY_USER_REFRESH_TOKEN not set');
             return new Map();
         }
-        const resultMap = new Map<string, Awaited<ReturnType<typeof fetchEbayItemCompatibilities>>>();
-        const queue = [...legacyItemIds];
+
+        // Map legacy numeric ID → external ID so we can re-key results by external ID.
+        const legacyToExternal = new Map<string, string>();
+        for (const ext of vendorListingExternalIds) {
+            const legacy = ext.includes('|') ? ext.split('|')[1] : ext;
+            if (legacy) legacyToExternal.set(legacy, ext);
+        }
+
+        const byLegacy = new Map<string, Fitment[]>();
+        const queue = [...legacyToExternal.keys()];
         const worker = async () => {
             while (queue.length > 0) {
                 const id = queue.shift()!;
-                resultMap.set(id, await fetchEbayItemCompatibilities(id, userToken, this.config.apiUrl));
+                byLegacy.set(id, await fetchEbayItemCompatibilities(id, userToken, this.config.apiUrl));
             }
         };
         await Promise.all(Array.from({ length: concurrency }, worker));
-        return resultMap;
+
+        const result = new Map<string, Fitment[]>();
+        for (const [legacy, fits] of byLegacy) {
+            const ext = legacyToExternal.get(legacy);
+            if (ext) result.set(ext, fits);
+        }
+        return result;
     }
 
     /**
