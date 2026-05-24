@@ -71,4 +71,16 @@ describe('mapEbayPosition ambiguity', () => {
   it('undefined placement → undefined', () => {
     expect(mapEbayPosition('HEADLIGHT', undefined)).toBeUndefined();
   });
+
+  it('"Rear, Left" on FENDER → REAR_LEFT_FENDER', () => {
+    expect(mapEbayPosition('FENDER', 'Rear, Left')).toBe('REAR_LEFT_FENDER');
+  });
+
+  it('"DS" → HEADLIGHT_LEFT', () => {
+    expect(mapEbayPosition('HEADLIGHT', 'DS')).toBe('HEADLIGHT_LEFT');
+  });
+
+  it('BUMPER_BEAM "Front" → FRONT_BUMPER', () => {
+    expect(mapEbayPosition('BUMPER_BEAM', 'Front')).toBe('FRONT_BUMPER');
+  });
 });

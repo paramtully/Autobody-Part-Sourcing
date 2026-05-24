@@ -212,6 +212,7 @@ export function mapEbayCategory(categoryPath?: string, categoryName?: string, hi
 
     // Most-specific patterns first to avoid false positives on broader terms
     if (/bumper\s*(cover|fascia)/.test(text)) return 'BUMPER_COVER';
+    if (/bumper\s*(reinforcement|impact\s*bar)/.test(text)) return 'BUMPER_BEAM';
     if (/bumper\s*beam/.test(text)) return 'BUMPER_BEAM';
     if (/bumper\s*bracket/.test(text)) return 'BUMPER_BRACKET';
     if (/bumper\s*foam|absorber/.test(text)) return 'BUMPER_FOAM';
@@ -239,6 +240,7 @@ export function mapEbayCategory(categoryPath?: string, categoryName?: string, hi
 
     if (/trunk\s*hinge/.test(text)) return 'TRUNK_HINGE';
     if (/trunk\s*latch/.test(text)) return 'TRUNK_LATCH';
+    if (/tailgate|lift\s*gate|liftgate/.test(text)) return 'TRUNK_LID';
     if (/trunk\s*(lid|deck)/.test(text)) return 'TRUNK_LID';
 
     if (/headlight|head\s*lamp/.test(text)) return 'HEADLIGHT';
@@ -312,8 +314,8 @@ export function mapEbayItemAvailability(estimatedAvailableQuantity?: number | nu
 export function mapEbayPosition(category: string, placement?: string): string | undefined {
     if (!placement) return undefined;
     const p = placement.toLowerCase();
-    const isLeft  = /\b(left|driver|lh)\b/.test(p);
-    const isRight = /\b(right|passenger|rh)\b/.test(p);
+    const isLeft  = /\b(left|driver|lh|l\/h|d\/?s)\b/.test(p);
+    const isRight = /\b(right|passenger|rh|r\/h|p\/?s)\b/.test(p);
     const isFront = /\bfront\b/.test(p);
     const isRear  = /\b(rear|back)\b/.test(p);
 
@@ -325,7 +327,8 @@ export function mapEbayPosition(category: string, placement?: string): string | 
         case 'TAILLIGHT':    return isLeft ? 'TAILLIGHT_LEFT'    : isRight ? 'TAILLIGHT_RIGHT'    : undefined;
         case 'MIRROR':
         case 'DOOR_MIRROR':  return isLeft ? 'MIRROR_LEFT'       : isRight ? 'MIRROR_RIGHT'       : undefined;
-        case 'FENDER':       return isLeft ? 'FRONT_LEFT_FENDER' : isRight ? 'FRONT_RIGHT_FENDER' : undefined;
+        case 'FENDER':       return isLeft && isRear ? 'REAR_LEFT_FENDER' : isRight && isRear ? 'REAR_RIGHT_FENDER'
+                                  : isLeft ? 'FRONT_LEFT_FENDER' : isRight ? 'FRONT_RIGHT_FENDER' : undefined;
         case 'FENDER_LINER': return isLeft ? 'FENDER_LINER_LEFT' : isRight ? 'FENDER_LINER_RIGHT' : undefined;
         case 'DOOR':
         case 'DOOR_HANDLE':  return isLeft && isFront ? 'FRONT_LEFT_DOOR' : isRight && isFront ? 'FRONT_RIGHT_DOOR'
@@ -333,7 +336,10 @@ export function mapEbayPosition(category: string, placement?: string): string | 
         case 'QUARTER_PANEL': return isLeft ? 'QUARTER_PANEL_LEFT' : isRight ? 'QUARTER_PANEL_RIGHT' : undefined;
         case 'SIDE_WINDOW':  return isLeft ? 'SIDE_WINDOW_LEFT'  : isRight ? 'SIDE_WINDOW_RIGHT'  : undefined;
         case 'BUMPER':
-        case 'BUMPER_COVER': return isFront ? 'FRONT_BUMPER' : isRear ? 'REAR_BUMPER' : undefined;
+        case 'BUMPER_COVER':
+        case 'BUMPER_BEAM':
+        case 'BUMPER_BRACKET':
+        case 'BUMPER_FOAM':  return isFront ? 'FRONT_BUMPER' : isRear ? 'REAR_BUMPER' : undefined;
         default:             return undefined;
     }
 }
@@ -422,7 +428,7 @@ export interface ClassifiedIdentifier {
  *  Returns undefined when no pattern matches (caller falls back to aspect-key default + brand list).
  *  Returns a ClassifiedIdentifier when a known OEM or Partslink pattern is detected. */
 export function classifyIdentifier(value: string): ClassifiedIdentifier | null | undefined {
-    const v = value.trim();
+    const v = value.trim().replace(/-/g, '');
     if (!v) return undefined;
     if (UPC_EAN_PATTERN.test(v)) return null;   // drop barcodes
 

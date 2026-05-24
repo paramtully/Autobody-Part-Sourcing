@@ -49,4 +49,5 @@ test/fixtures/ebay/live/
 **/CLAUDE.md
 **/*.cursor
 **/graphify-out
+**/docs/
 

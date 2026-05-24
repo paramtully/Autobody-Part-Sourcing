@@ -208,7 +208,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const category = mapEbayCategory(
             item.categoryPath,
             item.primaryCategory?.categoryName,
-            `${aspects['Type']?.[0] ?? ''} ${item.title ?? ''}`,
+            `${aspects['Part Name']?.[0] ?? ''} ${aspects['Type']?.[0] ?? ''} ${item.title ?? ''}`,
         );
         const descText = `${item.title ?? ''} ${item.description ?? ''}`;
 
