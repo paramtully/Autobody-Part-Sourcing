@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useSearchParams, useInfiniteQuery } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import ListingCard from "../components/ListingCard";
 import axios from "axios";
 
@@ -49,7 +51,7 @@ const Listings = () => {
         make: make, model: model, year: year,
         category: category, position: position, constraint: constraint
     });
-    const [draftPartNumber, setDraftPartNumber] = useState(partNumber);
+    const [draftPartNumber, setDraftPartNumber] = useState({ partNumber });
 
     const fitmentQuery = useInfiniteQuery({
         queryKey: ['listings', 'fitments', { make: make, model: model, year: year, category: category, position: position, constraint: constraint }],
