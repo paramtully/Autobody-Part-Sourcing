@@ -17,11 +17,11 @@ const router = express.Router();
 // app.use(express.json()) in server.ts so that raw body is preserved.
 router.use(express.raw({ type: 'application/json' }));
 
-const paymentProvider: PaymentProviderAdapter = new StripePaymentAdapter();
-const paymentService: PaymentService = new PaymentService();
-
 router.post('/:providerId', async (req: Request, res: Response) => {
   const { providerId } = req.params as { providerId: string };
+
+  const paymentProvider: PaymentProviderAdapter = new StripePaymentAdapter();
+  const paymentService: PaymentService = new PaymentService();
 
   if (providerId !== paymentProvider.providerId) {
     res.status(404).json({ error: 'Unknown payment provider' });

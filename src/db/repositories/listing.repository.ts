@@ -1,7 +1,7 @@
 import { eq, and, sql, getTableColumns } from 'drizzle-orm';
 import type { Db } from '../client';
 import { db } from '../client';
-import { listings, vendors, partIdentifiers } from '../models';
+import { listings, vendors, partIdentifiers } from '../models/index.js';
 
 export type ListingRow = typeof listings.$inferSelect;
 

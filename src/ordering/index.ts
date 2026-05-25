@@ -3,7 +3,6 @@ export * from './events';
 export * from './lock';
 export * from './clients/vendorOrderClient';
 export * from './clients/registry';
-export * from './composeOrdering';
 export * from './services/checkoutService';
 export * from './services/paymentService';
 export * from './services/vendorOrderService';

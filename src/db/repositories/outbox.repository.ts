@@ -1,6 +1,6 @@
 import { asc, and, isNull, lt, eq, sql } from 'drizzle-orm';
 import type { Db } from '../client';
-import { outboxEvents } from '../models';
+import { outboxEvents } from '../models/index.js';
 import { db } from '../client';
 
 export type OutboxEventRow = typeof outboxEvents.$inferSelect;

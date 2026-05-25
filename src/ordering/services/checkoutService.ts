@@ -5,7 +5,7 @@ import { ORDER_TOPICS } from '../events/topics';
 import { VendorOrderClientRegistry } from '../clients/registry';
 import type { OrderQuoteResult, ShippingAddress } from '../clients/vendorOrderClient';
 import { PaymentProviderAdapter, CreatePaymentResult } from '../payment/paymentProvider';
-import { StripePaymentAdapter } from '@repo/ordering/payment';
+import { StripePaymentAdapter } from '../payment/paymentProvider.stripe';
 import { ConfirmBody, QuoteBody } from '@repo/db/schema/order.schema';
 import { Db, db } from '@repo/db/client';
 

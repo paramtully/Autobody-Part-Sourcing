@@ -2,8 +2,10 @@
   "name": "@repo/db",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./*": "./*.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.44.0",

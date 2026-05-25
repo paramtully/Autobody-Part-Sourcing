@@ -11,7 +11,7 @@
   "scripts": {
     "setup": "npx drizzle-kit push && npm run seed",
     "seed": "tsx scripts/seed.ts",
-    "dev": "npm run dev -w apps/api & npm run start -w apps/client",
+    "dev": "npm run dev -w apps/api & npm run dev -w apps/client",
     "ingest": "npm run dev -w apps/workers/listingWorker",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --forceExit"
   },

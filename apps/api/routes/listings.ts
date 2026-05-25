@@ -1,14 +1,40 @@
 import express, { type Request, type Response } from 'express';
-import { db, listingImages, partFitments } from '@repo/db';
-import { listings, partIdentifiers, parts, fitments } from '@repo/db/schemas';
-import { eq, inArray, and, gt, asc } from 'drizzle-orm';
-import { fitmentSchema } from '@repo/db/schemas';
+import {
+    db,
+    listingImages,
+    partFitments,
+    vendors,
+    listings,
+    partIdentifiers,
+    parts,
+    fitments,
+    partConditionEnum,
+    partIdentifierTypeEnum,
+    availabilityStatusEnum,
+    fitmentSchema,
+} from '@repo/db';
+import { eq, and, gt, asc, desc, inArray, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 const router = express.Router();
 const PAGE_SIZE = 50;
+
+// ── Shared filter/sort schema (applied to both search endpoints) ──────────────
+
+const listingQuerySchema = z.object({
+    cursor: z.coerce.number().int().optional(),
+    sort: z.enum(['price_asc', 'price_desc', 'eta_asc', 'reliability_desc', 'best_match']).optional(),
+    partType: z.enum(partIdentifierTypeEnum.enumValues).optional(),
+    condition: z.string().optional(),   // comma-separated PartCondition values
+    vendorId: z.string().optional(),    // comma-separated vendor slugs
+    availability: z.enum(['IN_STOCK', 'LOW_STOCK', 'BACKORDER', 'ANY']).default('ANY'),
+});
+
+// ── Shared select columns (all downstream pages get the same shape) ────────────
+
 const listingParams = {
 
-    // id
+    // ids
     id: listings.id,
     partId: partIdentifiers.partId,
 
@@ -28,147 +54,205 @@ const listingParams = {
     condition: listings.condition,
     description: listings.description,
     quantityAvailable: listings.quantityAvailable,
+    availabilityStatus: listings.availabilityStatus,
     priceMinorMin: listings.priceMinorMin,
     priceMinorMax: listings.priceMinorMax,
     currency: listings.currency,
     estimatedDeliveryDate: listings.estimatedDeliveryDate,
+    estimatedShipTimeHours: listings.estimatedShipTimeHours,
+    sourceUrl: listings.sourceUrl,
     sourceVehicleVin: listings.sourceVehicleVin,
     sourceMileage: listings.sourceMileage,
+    confidenceScore: listings.confidenceScore,
+    lastVerifiedAt: listings.lastVerifiedAt,
 
+    // vendor info (joined)
+    vendorId: vendors.id,
+    vendorName: vendors.name,
+    vendorType: vendors.vendorType,
+    vendorReliabilityScore: vendors.reliabilityScore,
+    vendorOrderContactEmail: vendors.orderContactEmail,
 };
 
-function parseCursor(raw: unknown): number | undefined {
-    if (!raw) return undefined;
-    const n = parseInt(raw as string);
-    if (isNaN(n)) throw new Error('Invalid cursor');
-    return n;
+// ── Helper: build filter predicates from parsed query ─────────────────────────
+
+function buildFilterPredicates(
+    query: z.infer<typeof listingQuerySchema>,
+    cursor: number | undefined,
+) {
+    const predicates: (ReturnType<typeof eq> | undefined)[] = [];
+
+    if (cursor) predicates.push(gt(listings.id, cursor.toString()));
+
+    if (query.partType) predicates.push(eq(partIdentifiers.type, query.partType));
+
+    if (query.condition) {
+        const conditionValues = query.condition.split(',').map(s => s.trim()).filter(Boolean) as (typeof partConditionEnum.enumValues[number])[];
+        const first = conditionValues[0];
+        if (conditionValues.length === 1 && first) {
+            predicates.push(eq(listings.condition, first));
+        } else if (conditionValues.length > 1) {
+            predicates.push(inArray(listings.condition, conditionValues));
+        }
+    }
+
+    if (query.vendorId) {
+        const vendorIds = query.vendorId.split(',').map(s => s.trim()).filter(Boolean);
+        if (vendorIds.length === 1 && vendorIds[0]) {
+            predicates.push(eq(vendors.id, vendorIds[0]));
+        } else if (vendorIds.length > 1) {
+            predicates.push(inArray(vendors.id, vendorIds));
+        }
+    }
+
+    if (query.availability && query.availability !== 'ANY') {
+        predicates.push(eq(listings.availabilityStatus, query.availability as typeof availabilityStatusEnum.enumValues[number]));
+    }
+
+    return predicates.filter((p): p is NonNullable<typeof p> => p !== undefined);
 }
 
-// search paginated listings by fitment
-router.get("/by-fitment", (req: Request, res: Response) => {
+// ── Helper: build ORDER BY clause from sort param ─────────────────────────────
 
-    const cursor = parseCursor(req.query?.cursor);
+function buildOrderBy(sort: z.infer<typeof listingQuerySchema>['sort']) {
+    switch (sort) {
+        case 'price_asc':    return [asc(listings.priceMinorMin), asc(listings.id)];
+        case 'price_desc':   return [desc(listings.priceMinorMin), asc(listings.id)];
+        case 'eta_asc':      return [asc(listings.estimatedShipTimeHours), asc(listings.id)];
+        case 'reliability_desc': return [desc(vendors.reliabilityScore), asc(listings.id)];
+        case 'best_match':
+        default:             return [desc(vendors.reliabilityScore), asc(listings.priceMinorMin), asc(listings.id)];
+    }
+}
 
-    // validate fitment from query params
+// ── GET /listings/by-fitment ──────────────────────────────────────────────────
+
+router.get('/by-fitment', (req: Request, res: Response) => {
+
     const fitment = fitmentSchema.safeParse(req.query);
-
     if (!fitment.success) {
-        return res.status(400).json({ error: 'Fitment data is inavlid'})
+        return res.status(400).json({ error: 'Fitment data is invalid' });
+    }
+
+    const query = listingQuerySchema.safeParse(req.query);
+    if (!query.success) {
+        return res.status(400).json({ error: 'Invalid query params', details: query.error.flatten() });
     }
 
     const { make, model, year, category, position, constraint } = fitment.data;
+    const { cursor } = query.data;
+    const filterPredicates = buildFilterPredicates(query.data, cursor);
+    const orderBy = buildOrderBy(query.data.sort);
 
-    db.select(listingParams).from(listings)
+    // Cast Zod-validated enum strings — safe because safeParse guarantees enum membership
+    type PartCategory = (typeof parts)['category']['_']['data'];
+    type PartPosition = (typeof parts)['position']['_']['data'];
+    type FitmentConstraint = (typeof fitments)['constraint']['_']['data'];
+
+    // DISTINCT ON listings.id prevents duplicate rows when a part fits
+    // multiple trims/engines for the same make/model/year — the join with
+    // partFitments+fitments would otherwise multiply each listing by the
+    // number of matching fitment rows.
+    db.selectDistinctOn([listings.id], listingParams).from(listings)
+        .innerJoin(vendors, eq(listings.vendorId, vendors.id))
         .innerJoin(partIdentifiers, eq(listings.partIdentifierId, partIdentifiers.id))
         .innerJoin(parts, eq(partIdentifiers.partId, parts.id))
         .innerJoin(partFitments, eq(parts.id, partFitments.partId))
         .innerJoin(fitments, eq(partFitments.fitmentId, fitments.id))
-        .where(
-            and(
-                eq(fitments.make, make),
-                eq(fitments.model, model),
-                eq(fitments.year, year),
-                category ? eq(parts.category, category) : undefined,
-                position ? eq(parts.position, position) : undefined,
-                constraint ? eq(fitments.constraint, constraint) : undefined,
-                
-                cursor ? gt(listings.id, cursor) : undefined,))
-        .orderBy(asc(listings.id))
+        .where(and(
+            // Case-insensitive: wizard dropdowns reflect DB stored case (mixed)
+            // while fitmentSchema upper-cases the submitted value.
+            sql`lower(${fitments.make}) = lower(${make})`,
+            sql`lower(${fitments.model}) = lower(${model})`,
+            eq(fitments.year, year),
+            category ? eq(parts.category, category as PartCategory) : undefined,
+            position ? eq(parts.position, position as PartPosition) : undefined,
+            constraint ? eq(fitments.constraint, constraint as FitmentConstraint) : undefined,
+            ...filterPredicates,
+        ))
+        .orderBy(listings.id, ...orderBy)
         .limit(PAGE_SIZE)
-    .then((listings: any[]) => {
-        return res.status(200).json({
-            listings: listings, 
-            hasMore: listings.length === PAGE_SIZE,
-            cursor: listings.length ? listings[listings.length - 1].id : null
+        .then((rows: any[]) => {
+            return res.status(200).json({
+                listings: rows,
+                hasMore: rows.length === PAGE_SIZE,
+                cursor: rows.length ? rows[rows.length - 1].id : null,
+            });
+        }).catch((err: Error) => {
+            console.error('Listing search failed:', err);
+            return res.status(500).json({ error: 'Error: ' + err.message });
         });
-    }).catch((err: Error) => {
-        console.error('Listing search failed:', err);
-        return res.status(500).json({ error: 'Error: ' + err.message });
-    });
 });
 
-// search paginated listings by part number and page (1 indexed)
+// ── GET /listings/by-part-number/:partNumber ──────────────────────────────────
+
 router.get('/by-part-number/:partNumber', async (req: Request, res: Response) => {
 
-    const cursor = req.query?.cursor !== undefined ? parseInt(req.query.cursor as string) : undefined;
     const partNumber: string = (req.params?.partNumber as string)?.trim().toUpperCase().replace(/-/g, '');
 
-    if (cursor !== undefined && isNaN(cursor)) {
-        return res.status(400).json({ error: 'Invalid cursor' });
+    const query = listingQuerySchema.safeParse(req.query);
+    if (!query.success) {
+        return res.status(400).json({ error: 'Invalid query params', details: query.error.flatten() });
     }
 
+    const { cursor } = query.data;
+    const filterPredicates = buildFilterPredicates(query.data, cursor);
+    const orderBy = buildOrderBy(query.data.sort);
+
     try {
-        // get partId
         const [part] = await db.select({ partId: partIdentifiers.partId }).from(partIdentifiers)
             .where(eq(partIdentifiers.value, partNumber))
             .limit(1);
 
         if (!part) {
             return res.status(404).json({ error: 'Part not found for part number: ' + partNumber });
-        }    
+        }
 
-        // get listings
         const result = await db.select(listingParams).from(listings)
+            .innerJoin(vendors, eq(listings.vendorId, vendors.id))
             .innerJoin(partIdentifiers, eq(listings.partIdentifierId, partIdentifiers.id))
             .innerJoin(parts, eq(partIdentifiers.partId, parts.id))
-            .where(
-                and(
-                    cursor ? gt(listings.id, cursor) : undefined,
-                    eq(partIdentifiers.partId, part.partId)))
-            .orderBy(asc(listings.id))
+            .where(and(
+                eq(partIdentifiers.partId, part.partId),
+                ...filterPredicates,
+            ))
+            .orderBy(...orderBy)
             .limit(PAGE_SIZE);
-        
-        // this is a 1 query version of the above 2 step query
-        // const result2 = await db.select(listingParams).from(listings)
-        // .innerJoin(partIdentifiers, eq(listings.partIdentifier, partIdentifiers.id))
-        // .where(
-        //     and(
-        //         cursor ? gt(listings.id, cursor) : undefined,
-        //         inArray(
-        //             partIdentifiers.partId,
-        //             db.select(partIdentifiers.partId).from(partIdentifiers)
-        //                 .where(eq(partIdentifiers.value, partNumber))
-        //         )))
-        // .orderBy(asc(listings.id))
-        // .limit(PAGE_SIZE);
 
-        return res.status(200).json({ 
-            listings: result, 
+        const lastResult = result[result.length - 1];
+        return res.status(200).json({
+            listings: result,
             hasMore: result.length === PAGE_SIZE,
-            cursor: listings.length ? listings[listings.length - 1].id : null
+            cursor: lastResult?.id ?? null,
         });
 
-    } catch(err: unknown) {
+    } catch (err: unknown) {
         console.error('Listing search failed:', err);
         return res.status(500).json({ error: 'Error: ' + err });
-    };
+    }
 });
 
-// get images associated with a listing
+// ── GET /listings/images/:listingId ──────────────────────────────────────────
+
 router.get('/images/:listingId', (req: Request, res: Response) => {
     const listingId = req.params?.listingId;
     if (!listingId) {
         return res.status(400).json({ error: 'Listing ID is required' });
     }
-    
+
     db.select({
         url: listingImages.url,
         imageType: listingImages.imageType,
-        sortOrder: listingImages.sortOrder
+        sortOrder: listingImages.sortOrder,
     }).from(listingImages)
         .where(eq(listingImages.listingId, listingId as string))
         .orderBy(asc(listingImages.sortOrder))
-    .then((images: any[]) => {
-        return res.status(200).json({
-            listingId: listingId,
-            listingImages: images
+        .then((images: any[]) => {
+            return res.status(200).json({ listingId, listingImages: images });
+        }).catch((err: Error) => {
+            console.error('Search failed for listing images:', err);
+            return res.status(500).json({ error: 'Error: ' + err });
         });
-    }).catch((err: Error) => {
-        console.log('Search failed for listing images:', err);
-        return res.status(500).json({ error: 'Error: ' + err });
-    });
-    
 });
 
 export default router;
-
