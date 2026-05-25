@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback } from 'react';
-import { X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { VendorDTO } from '@/lib/types';
+import type { VendorDTO, CurrencyFilter } from '@/lib/types';
 import { cn } from '@/lib/cn';
 
 const CONDITIONS = [
@@ -30,6 +29,7 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
   const params = useSearchParams();
 
   const partType = params.get('partType') ?? '';
+  const currency = (params.get('currency') ?? 'CAD') as CurrencyFilter;
   const conditionRaw = params.get('condition') ?? '';
   const vendorIdRaw = params.get('vendorId') ?? '';
   const availabilityRaw = params.get('availability') ?? '';
@@ -43,7 +43,6 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
       const next = new URLSearchParams(params.toString());
       if (value) next.set(key, value);
       else next.delete(key);
-      // Reset cursor on filter change
       next.delete('cursor');
       router.push(`?${next.toString()}`, { scroll: false });
     },
@@ -56,6 +55,18 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
         ? current.filter(v => v !== value)
         : [...current, value];
       updateParam(key, next.join(','));
+    },
+    [updateParam],
+  );
+
+  // Region is sticky context — not a filter — so it never contributes to hasFilters
+  // and is excluded from Reset.
+  const setRegion = useCallback(
+    (value: CurrencyFilter) => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('region', value);
+      }
+      updateParam('currency', value);
     },
     [updateParam],
   );
@@ -139,6 +150,31 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
           ))}
         </FilterSection>
       )}
+
+      {/* Region — sticky preference, not a filter. Lives at the bottom so it stays
+          out of the way during normal searching but is easy to find when needed. */}
+      <div className="mt-6 pt-5 border-t border-[#E5E7EB]">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8] mb-2">Region</p>
+        <div className="bg-[#F1F5F9] p-1 rounded-lg flex">
+          {([
+            { value: 'CAD', label: 'Canada' },
+            { value: 'USD', label: 'United States' },
+          ] as const).map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => setRegion(value)}
+              className={cn(
+                'flex-1 px-3 py-1.5 rounded text-[12px] font-medium transition-colors',
+                currency === value
+                  ? 'bg-white text-[#0B1220] shadow-sm'
+                  : 'text-[#475569] hover:text-[#0B1220]',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
     </aside>
   );
 }

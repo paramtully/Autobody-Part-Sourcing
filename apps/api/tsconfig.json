@@ -9,7 +9,8 @@
     "paths": {
       "@repo/db": ["../../src/db/index.ts"],
       "@repo/ordering": ["../../src/ordering/index.ts"],
-      "@repo/ordering/stripe": ["../../src/ordering/payment/paymentProvider.stripe.ts"]
+      "@repo/ordering/stripe": ["../../src/ordering/payment/paymentProvider.stripe.ts"],
+      "@repo/affiliate": ["../../src/affiliate/index.ts"]
     },
 
     // Environment Settings

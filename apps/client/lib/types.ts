@@ -98,6 +98,8 @@ export interface ListingImage {
 
 // ── Search params ─────────────────────────────────────────────────────────────
 
+export type CurrencyFilter = 'USD' | 'CAD';
+
 export interface PartNumberSearchParams {
   partNumber: string;
   sort?: SortOption;
@@ -105,6 +107,7 @@ export interface PartNumberSearchParams {
   condition?: string;
   vendorId?: string;
   availability?: AvailabilityFilter;
+  currency?: CurrencyFilter;
 }
 
 export interface FitmentSearchParams {
@@ -119,6 +122,7 @@ export interface FitmentSearchParams {
   condition?: string;
   vendorId?: string;
   availability?: AvailabilityFilter;
+  currency?: CurrencyFilter;
 }
 
 // ── Recent searches (localStorage) ──────────────────────────────────────────

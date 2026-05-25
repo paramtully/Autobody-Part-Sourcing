@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { fetchListingsByPartNumber, fetchListingsByFitment, fetchVendors } from '@/lib/api';
 import { computeBestValueScores, getRankedIds } from '@/lib/bestValue';
 import { oldestFreshness } from '@/lib/formatters';
 import { useDensity } from '@/lib/useDensity';
-import type { ListingDTO, SortOption, PartIdentifierType, AvailabilityFilter } from '@/lib/types';
+import type { ListingDTO, SortOption, PartIdentifierType, AvailabilityFilter, CurrencyFilter } from '@/lib/types';
 
 import ResultsToolbar from '@/components/results/ResultsToolbar';
 import FiltersSidebar from '@/components/results/FiltersSidebar';
@@ -35,6 +35,7 @@ const TABLE_COLUMNS = [
 
 export default function ResultsPage() {
   const params = useSearchParams();
+  const router = useRouter();
   const [density, setDensity] = useDensity();
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const loadMoreRef = useRef<HTMLElement>(null);
@@ -53,6 +54,23 @@ export default function ResultsPage() {
   const vendorId = params.get('vendorId') ?? '';
   const availability = (params.get('availability') as AvailabilityFilter) ?? 'ANY';
 
+  const currencyParam = params.get('currency') as CurrencyFilter | null;
+  const currency: CurrencyFilter = currencyParam ?? 'CAD';
+
+  // On first mount, if the URL has no currency param, read localStorage then
+  // default to CAD and write it back so the URL is always the source of truth.
+  useEffect(() => {
+    if (currencyParam !== null) return;
+    const stored = typeof window !== 'undefined'
+      ? window.localStorage.getItem('region')
+      : null;
+    const initial: CurrencyFilter = stored === 'USD' || stored === 'CAD' ? stored : 'CAD';
+    const next = new URLSearchParams(params.toString());
+    next.set('currency', initial);
+    router.replace(`?${next.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const isFitment = mode === 'fitment';
   const isEnabled = isFitment ? !!(make && model && year) : !!partNumber;
 
@@ -67,8 +85,8 @@ export default function ResultsPage() {
   // doesn't appear in the queryKey or in the API call. Flipping OEM/AFTERMARKET
   // just re-filters the already-fetched data instantly, no network roundtrip.
   const queryKey = isFitment
-    ? ['listings', 'fitment', { make, model, year, category, position, constraint, sort, condition, vendorId, availability }]
-    : ['listings', 'part', { partNumber, sort, condition, vendorId, availability }];
+    ? ['listings', 'fitment', { make, model, year, category, position, constraint, sort, condition, vendorId, availability, currency }]
+    : ['listings', 'part', { partNumber, sort, condition, vendorId, availability, currency }];
 
   const {
     data,
@@ -82,7 +100,7 @@ export default function ResultsPage() {
   } = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) => {
-      const base = { sort, condition: condition || undefined, vendorId: vendorId || undefined, availability, cursor: pageParam as string | undefined };
+      const base = { sort, condition: condition || undefined, vendorId: vendorId || undefined, availability, currency, cursor: pageParam as string | undefined };
       if (isFitment) {
         return fetchListingsByFitment({ make, model, year, category: category || undefined, position: position || undefined, constraint: constraint || undefined, ...base });
       }

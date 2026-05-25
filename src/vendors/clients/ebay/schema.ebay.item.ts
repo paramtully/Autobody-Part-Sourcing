@@ -454,6 +454,10 @@ const HTML_ENTITIES: Record<string, string> = {
 
 export function stripHtml(text: string): string {
     return text
+        // Drop the *contents* of style/script/noscript blocks (eBay descriptions often
+        // embed huge <style> blocks with base64-encoded background-image data URIs).
+        .replace(/<(style|script|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<!--[\s\S]*?-->/g, ' ')
         .replace(/<[^>]+>/g, ' ')
         .replace(/&[a-z]+;/gi, m => HTML_ENTITIES[m] ?? ' ')
         .replace(/&#\d+;/g, ' ')

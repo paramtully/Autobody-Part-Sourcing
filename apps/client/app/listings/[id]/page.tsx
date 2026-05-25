@@ -76,9 +76,9 @@ export default function ListingDetailPage({ params }: { params: Promise<Params> 
       </div>
 
       <Container className="py-8">
-        <div className="grid lg:grid-cols-[1fr_360px] gap-8 items-start">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-8 items-start">
           {/* Left column: gallery + specs */}
-          <div className="space-y-8">
+          <div className="space-y-8 min-w-0">
             {/* Gallery */}
             {imagesLoading ? (
               <Skeleton className="aspect-[4/3] rounded-xl" />
@@ -109,9 +109,11 @@ export default function ListingDetailPage({ params }: { params: Promise<Params> 
               </div>
 
               {listing.description && (
-                <div className="mt-4">
+                <div className="mt-4 min-w-0">
                   <p className="text-[12px] text-[#94A3B8] uppercase tracking-wide font-semibold mb-1">Description</p>
-                  <p className="text-[13px] text-[#475569] leading-relaxed">{listing.description}</p>
+                  <p className="text-[13px] text-[#475569] leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap max-h-64 overflow-y-auto">
+                    {listing.description}
+                  </p>
                 </div>
               )}
             </div>

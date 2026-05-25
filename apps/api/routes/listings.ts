@@ -13,8 +13,19 @@ import {
     availabilityStatusEnum,
     fitmentSchema,
 } from '@repo/db';
+import { getAffiliateBuilder } from '@repo/affiliate';
 import { eq, and, gt, asc, desc, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
+
+function decorateAffiliate<T extends { vendorId: string; sourceUrl: string | null }>(rows: T[]): T[] {
+    for (const row of rows) {
+        if (!row.sourceUrl) continue;
+        // v1: fall back to canonical when builder returns null (env not set, wrong host, etc.)
+        // future: swap `?? row.sourceUrl` for `?? null` to suppress unbuildable links.
+        row.sourceUrl = getAffiliateBuilder(row.vendorId).wrap(row.sourceUrl) ?? row.sourceUrl;
+    }
+    return rows;
+}
 
 const router = express.Router();
 const PAGE_SIZE = 50;
@@ -28,6 +39,7 @@ const listingQuerySchema = z.object({
     condition: z.string().optional(),   // comma-separated PartCondition values
     vendorId: z.string().optional(),    // comma-separated vendor slugs
     availability: z.enum(['IN_STOCK', 'LOW_STOCK', 'BACKORDER', 'ANY']).default('ANY'),
+    currency: z.enum(['USD', 'CAD']).optional(),
 });
 
 // ── Shared select columns (all downstream pages get the same shape) ────────────
@@ -109,6 +121,10 @@ function buildFilterPredicates(
         predicates.push(eq(listings.availabilityStatus, query.availability as typeof availabilityStatusEnum.enumValues[number]));
     }
 
+    if (query.currency) {
+        predicates.push(eq(listings.currency, query.currency as typeof listings.$inferSelect['currency']));
+    }
+
     return predicates.filter((p): p is NonNullable<typeof p> => p !== undefined);
 }
 
@@ -174,7 +190,7 @@ router.get('/by-fitment', (req: Request, res: Response) => {
         .limit(PAGE_SIZE)
         .then((rows: any[]) => {
             return res.status(200).json({
-                listings: rows,
+                listings: decorateAffiliate(rows),
                 hasMore: rows.length === PAGE_SIZE,
                 cursor: rows.length ? rows[rows.length - 1].id : null,
             });
@@ -221,7 +237,7 @@ router.get('/by-part-number/:partNumber', async (req: Request, res: Response) =>
 
         const lastResult = result[result.length - 1];
         return res.status(200).json({
-            listings: result,
+            listings: decorateAffiliate(result),
             hasMore: result.length === PAGE_SIZE,
             cursor: lastResult?.id ?? null,
         });
