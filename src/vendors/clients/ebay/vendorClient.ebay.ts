@@ -61,6 +61,7 @@ interface eBayConfig {
     apiKey: string;
     apiSecret: string;
     apiUrl: string;
+    marketplaceId: string;
     token?: string;
     tokenExpiresAt?: Date;
     inFlightToken: boolean;
@@ -93,6 +94,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         apiKey: process.env.EBAY_API_KEY!,
         apiSecret: process.env.EBAY_API_SECRET!,
         apiUrl: process.env.EBAY_API_URL! || 'https://api.ebay.com',
+        marketplaceId: process.env.EBAY_MARKETPLACE_ID || 'EBAY_CA',
         inFlightToken: false,
         ruName: process.env.EBAY_RU_NAME || undefined,
         refreshToken: process.env.EBAY_USER_REFRESH_TOKEN || undefined,
@@ -326,6 +328,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${this.config.token}`,
+                    'X-EBAY-C-MARKETPLACE-ID': this.config.marketplaceId,
                 },
                 signal: AbortSignal.timeout(30_000),
             });
@@ -455,7 +458,13 @@ export default class eBayVendorClient implements VendorInventoryClient {
         try {
             res = await fetch(
                 `${this.config.apiUrl}/buy/browse/v1/item/${encodeURIComponent(itemId)}?fieldgroups=PRODUCT`,
-                { headers: { Authorization: `Bearer ${this.config.token}` }, signal: AbortSignal.timeout(30_000) },
+                {
+                    headers: {
+                        Authorization: `Bearer ${this.config.token}`,
+                        'X-EBAY-C-MARKETPLACE-ID': this.config.marketplaceId,
+                    },
+                    signal: AbortSignal.timeout(30_000),
+                },
             );
         } catch {
             return { record: null }; // network blip or timeout — fall back to summary
