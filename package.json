@@ -17,7 +17,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --forceExit"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@electric-sql/pglite": "^0.4.5",
     "@types/archiver": "^7.0.0",
     "@types/jest": "^29.5.14",
