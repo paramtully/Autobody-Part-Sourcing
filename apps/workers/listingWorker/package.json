@@ -1,0 +1,22 @@
+{
+  "name": "listing-worker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../../.env ../../../node_modules/.bin/tsx -e \"import('./handler.js').then(m => m.handler())\"",
+    "lint": "eslint . -c ../../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "build": "node ../build.mjs listingWorker"
+  },
+  "dependencies": {
+    "@repo/db": "*",
+    "@repo/vendors": "*",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
+  }
+}

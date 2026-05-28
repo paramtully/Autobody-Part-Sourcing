@@ -1,0 +1,14 @@
+{
+  "name": "@repo/affiliate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "lint": "eslint . -c ../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  }
+}

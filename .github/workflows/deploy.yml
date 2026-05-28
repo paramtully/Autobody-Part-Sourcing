@@ -1,0 +1,300 @@
+name: Deploy
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+# Prevent concurrent deploys; never cancel an in-flight deploy
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # required for OIDC -> AWS
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  TF_VAR_aws_region: us-west-2
+  TF_VAR_github_owner: ${{ github.repository_owner }}
+  TF_VAR_github_repo: ${{ github.event.repository.name }}
+  NODE_VERSION: 20
+
+jobs:
+  # ── Package-aware change detection (commit that passed CI vs parent) ─────────
+  changes:
+    name: Detect changes
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+      && false
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+      deploy_migrate: ${{ steps.filter.outputs.deploy_migrate }}
+      deploy_api: ${{ steps.filter.outputs.deploy_api }}
+      deploy_client: ${{ steps.filter.outputs.deploy_client }}
+      deploy_listing_lambda: ${{ steps.filter.outputs.deploy_listing_lambda }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          base: ${{ github.event.workflow_run.head_sha }}^
+          ref: ${{ github.event.workflow_run.head_sha }}
+          filters: |
+            infra:
+              - 'infra/**'
+            deploy_migrate:
+              - 'src/db/**'
+              - 'drizzle.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+            deploy_api:
+              - 'apps/api/**'
+              - 'src/db/**'
+              - 'src/ordering/**'
+              - 'src/affiliate/**'
+              - 'package.json'
+              - 'package-lock.json'
+            deploy_client:
+              - 'apps/client/**'
+              - 'package.json'
+              - 'package-lock.json'
+            deploy_listing_lambda:
+              - 'apps/workers/listingWorker/**'
+              - 'apps/workers/build.mjs'
+              - 'src/db/**'
+              - 'src/vendors/**'
+              - 'package.json'
+              - 'package-lock.json'
+
+  # ── Terraform: apply only when infra changes; export listing Lambda names
+  terraform:
+    name: Terraform
+    needs: changes
+    if: >-
+      needs.changes.outputs.infra == 'true' ||
+      needs.changes.outputs.deploy_listing_lambda == 'true' 
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra/terraform
+    outputs:
+      listing_fns: ${{ steps.tf.outputs.listing_fns }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform init
+
+      - name: Terraform apply
+        if: needs.changes.outputs.infra == 'true'
+        run: terraform apply -auto-approve
+
+      - name: Export Terraform outputs
+        id: tf
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "listing_fns<<EOF" >> "$GITHUB_OUTPUT"
+          terraform output -json listing_fn_names >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+  # ── DB migrations (schema / drizzle config / lockfile) ───────────────────────
+  migrate:
+    name: DB migrations
+    needs: changes
+    if: needs.changes.outputs.deploy_migrate == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci --workspaces --include-workspace-root
+
+      - name: Run migrations
+        run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+
+  # ── listingWorker Lambda (esbuild bundles @repo/db + @repo/vendors) ─────────
+  lambdas:
+    name: Deploy listing Lambdas
+    needs: [changes, terraform, migrate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.terraform.result == 'success' &&
+      needs.changes.outputs.deploy_listing_lambda == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci --workspaces --include-workspace-root
+
+      - run: node apps/workers/build.mjs listingWorker
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Push listingWorker zip to every per-vendor Lambda
+        env:
+          LISTING_FNS: ${{ needs.terraform.outputs.listing_fns }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fn in $(echo "$LISTING_FNS" | jq -r '.[]'); do
+            echo "Deploying $fn"
+            aws lambda update-function-code \
+              --function-name "$fn" \
+              --zip-file fileb://apps/workers/dist/listingWorker.zip \
+              --publish
+          done
+
+  # ── Vercel: API (apps/api + @repo/db, ordering, affiliate) ─────────────────
+  deploy-api:
+    name: Deploy API
+    needs: [changes, migrate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.deploy_api == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm install -g vercel@latest
+
+      - name: Pull Vercel settings
+        working-directory: apps/api
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+
+      - name: Build API
+        working-directory: apps/api
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+
+      - name: Deploy API
+        working-directory: apps/api
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+
+  # ── Vercel: client (no @repo workspace deps) ─────────────────────────────────
+  deploy-client:
+    name: Deploy Client
+    needs: changes
+    if: needs.changes.outputs.deploy_client == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm install -g vercel@latest
+
+      - name: Pull Vercel settings
+        working-directory: apps/client
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+
+      - name: Build Client
+        working-directory: apps/client
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+
+      - name: Deploy Client
+        working-directory: apps/client
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+
+  # ── Post-deploy smoke checks (set repo variables PRODUCTION_API_URL / CLIENT) ─
+  healthcheck:
+    name: Production health checks
+    needs: [deploy-api, deploy-client, lambdas]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.deploy-api.result == 'success' ||
+       needs.deploy-client.result == 'success' ||
+       needs.lambdas.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify API health
+        if: >-
+          needs.deploy-api.result == 'success' &&
+          vars.PRODUCTION_API_URL != ''
+        run: |
+          curl --fail --silent --show-error \
+            "${{ vars.PRODUCTION_API_URL }}/health"
+
+      - name: Verify frontend reachable
+        if: >-
+          needs.deploy-client.result == 'success' &&
+          vars.PRODUCTION_CLIENT_URL != ''
+        run: |
+          curl --fail --silent --show-error \
+            "${{ vars.PRODUCTION_CLIENT_URL }}"

@@ -1,0 +1,53 @@
+{
+  "itemId": "v1|186848094548|0",
+  "legacyItemId": "186848094548",
+  "title": "2012-2015 Honda Civic Rear Left Quarter Panel Sheet Metal",
+  "shortDescription": "Rear left quarter panel for 2012-2015 Honda Civic. Direct replacement.",
+  "price": { "value": "219.99", "currency": "USD" },
+  "condition": "New",
+  "conditionId": "1000",
+  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Body Panels & Flares|Fenders",
+  "primaryCategory": { "categoryId": "33714", "categoryName": "Fenders" },
+  "seller": { "username": "bodyparts_direct", "feedbackPercentage": "99.1", "feedbackScore": 2340 },
+  "itemWebUrl": "https://www.ebay.com/itm/186848094548",
+  "estimatedAvailabilities": [
+    {
+      "deliveryOptions": ["SHIP_TO_HOME"],
+      "estimatedRemainingQuantity": 3,
+      "estimatedSoldQuantity": 7,
+      "availabilityThresholdType": "MORE_THAN",
+      "availabilityThreshold": 2
+    }
+  ],
+  "shippingOptions": [
+    {
+      "shippingCostType": "FLAT",
+      "shippingCost": { "value": "35.00", "currency": "USD" },
+      "minEstimatedDeliveryDate": "2030-01-06T00:00:00.000Z",
+      "maxEstimatedDeliveryDate": "2030-01-12T00:00:00.000Z"
+    }
+  ],
+  "additionalImages": [
+    { "imageUrl": "https://i.ebayimg.com/images/g/qp1/s-l500.jpg" }
+  ],
+  "compatibilityProperties": [
+    { "name": "Make", "value": "Honda" },
+    { "name": "Model", "value": "Civic" },
+    { "name": "Year", "value": "2013" },
+    { "name": "Trim", "value": "LX" }
+  ],
+  "itemLocation": {
+    "city": "Dallas",
+    "stateOrProvince": "Texas",
+    "country": "US",
+    "postalCode": "75201"
+  },
+  "localizedAspects": [
+    { "name": "Brand", "value": "Replace" },
+    { "name": "Type", "value": "Quarter Panel" },
+    { "name": "Placement on Vehicle", "value": "Rear, Left" },
+    { "name": "Manufacturer Part Number", "value": "REPH288107" },
+    { "name": "Partslink Number", "value": "HO1614117" },
+    { "name": "Interchange Part Number", "value": "64300-TR3-305ZZ" }
+  ]
+}

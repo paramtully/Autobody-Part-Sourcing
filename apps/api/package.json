@@ -1,0 +1,33 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --env-file=../../.env ../../node_modules/.bin/tsx watch server.ts",
+    "lint": "eslint . -c ../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "build": "tsc --noEmit -p tsconfig.check.json"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1047.0",
+    "@repo/db": "*",
+    "@repo/ordering": "*",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "stripe": "^22.0.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}

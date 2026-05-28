@@ -1,0 +1,56 @@
+{
+  "itemId": "v1|277644944264|0",
+  "legacyItemId": "277644944264",
+  "title": "2019-2021 Nissan Altima Front Bumper Cover w/o Sensor Holes Primed NI1000323",
+  "shortDescription": "Front bumper cover for 2019-2021 Nissan Altima. Primed and ready for paint.",
+  "price": { "value": "84.95", "currency": "USD" },
+  "condition": "New",
+  "conditionId": "1000",
+  "categoryPath": "eBay Motors|Parts & Accessories|Car & Truck Parts & Accessories|Bumpers & Bumper Components|Bumpers & Reinforcements",
+  "primaryCategory": { "categoryId": "33637", "categoryName": "Bumpers & Reinforcements" },
+  "seller": { "username": "texas-e-parts", "feedbackPercentage": "98.6", "feedbackScore": 4521 },
+  "itemWebUrl": "https://www.ebay.com/itm/277644944264",
+  "estimatedAvailabilities": [
+    {
+      "deliveryOptions": ["SHIP_TO_HOME"],
+      "estimatedRemainingQuantity": 5,
+      "estimatedSoldQuantity": 12,
+      "availabilityThresholdType": "MORE_THAN",
+      "availabilityThreshold": 2
+    }
+  ],
+  "shippingOptions": [
+    {
+      "shippingCostType": "FLAT",
+      "shippingCost": { "value": "0.00", "currency": "USD" },
+      "minEstimatedDeliveryDate": "2030-01-05T00:00:00.000Z",
+      "maxEstimatedDeliveryDate": "2030-01-10T00:00:00.000Z"
+    }
+  ],
+  "additionalImages": [
+    { "imageUrl": "https://i.ebayimg.com/images/g/abc/s-l500.jpg" },
+    { "imageUrl": "https://i.ebayimg.com/images/g/def/s-l500.jpg" }
+  ],
+  "compatibilityProperties": [
+    { "name": "Make", "value": "Nissan" },
+    { "name": "Model", "value": "Altima" },
+    { "name": "Year", "value": "2020" },
+    { "name": "Trim", "value": "SE" }
+  ],
+  "itemLocation": {
+    "city": "San Jose",
+    "stateOrProvince": "California",
+    "country": "US",
+    "postalCode": "945**"
+  },
+  "localizedAspects": [
+    { "name": "Brand", "value": "Texas-E-Parts" },
+    { "name": "Part Name", "value": "Front Bumper Cover" },
+    { "name": "Type", "value": "Front Bumper Cover Complete" },
+    { "name": "Placement on Vehicle", "value": "Front" },
+    { "name": "Manufacturer Part Number", "value": "NI1039163, NI1000323, NI1200292, NI1038163" },
+    { "name": "Interchange Part Number", "value": "62256-6CA0A, 622566CA0A, 62022-6CG0H" },
+    { "name": "OE/OEM Part Number", "value": "622566CA0A, 620226CG0H" },
+    { "name": "Parking Sensors", "value": "Without" }
+  ]
+}
