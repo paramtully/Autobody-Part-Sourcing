@@ -12,6 +12,7 @@ import {
     partIdentifierTypeEnum,
     availabilityStatusEnum,
     fitmentSchema,
+    normalizePartIdentifierValue,
 } from '@repo/db';
 import { getAffiliateBuilder } from '@repo/affiliate';
 import { eq, and, gt, asc, desc, inArray, sql } from 'drizzle-orm';
@@ -204,7 +205,7 @@ router.get('/by-fitment', (req: Request, res: Response) => {
 
 router.get('/by-part-number/:partNumber', async (req: Request, res: Response) => {
 
-    const partNumber: string = (req.params?.partNumber as string)?.trim().toUpperCase().replace(/-/g, '');
+    const partNumber = normalizePartIdentifierValue(req.params?.partNumber as string ?? '');
 
     const query = listingQuerySchema.safeParse(req.query);
     if (!query.success) {

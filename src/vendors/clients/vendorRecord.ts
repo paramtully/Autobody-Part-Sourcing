@@ -1,3 +1,4 @@
+import { partIdentifierSchema } from "@repo/db";
 import { partConditionEnum, availabilityStatusEnum, fitmentConstraintEnum } from "../../db/models/enums";
 
 export type PartCondition = (typeof partConditionEnum.enumValues)[number];
@@ -17,6 +18,10 @@ export type Fitment = {
   trim?: string;
   engine?: string;
   constraint?: FitmentConstraint;
+}
+
+export function normalizeVendorRecord(record: VendorRecord): VendorRecord {
+    return { ...record, identifiers: record.identifiers.map(i => partIdentifierSchema.parse(i)) };
 }
 
 export interface VendorRecord {

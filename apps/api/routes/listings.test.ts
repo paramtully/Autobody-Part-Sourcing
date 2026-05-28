@@ -66,7 +66,7 @@ describe('GET /listings/by-fitment', () => {
     await testDb.insert(partFitments).values({ partId, fitmentId }).onConflictDoNothing();
 
     const piRes = await testDb.execute<{ id: string }>(
-      `SELECT id FROM part_identifiers WHERE value = 'MPN-CIVIC-001' LIMIT 1`
+      `SELECT id FROM part_identifiers WHERE value = 'MPNCIVIC001' LIMIT 1`
     );
     const piId = piRes.rows[0]!.id;
 
@@ -137,7 +137,7 @@ describe('GET /listings/images/:listingId', () => {
       identifier: { type: 'AFTERMARKET', value: 'IMG-001' },
     });
     const piRes1 = await testDb.execute<{ id: string }>(
-      `SELECT id FROM part_identifiers WHERE value = 'IMG-001' LIMIT 1`
+      `SELECT id FROM part_identifiers WHERE value = 'IMG001' LIMIT 1`
     );
     const listingId = await seedListing(testDb, { partIdentifierId: piRes1.rows[0]!.id });
 
@@ -152,7 +152,7 @@ describe('GET /listings/images/:listingId', () => {
       identifier: { type: 'AFTERMARKET', value: 'IMG-002' },
     });
     const piRes2 = await testDb.execute<{ id: string }>(
-      `SELECT id FROM part_identifiers WHERE value = 'IMG-002' LIMIT 1`
+      `SELECT id FROM part_identifiers WHERE value = 'IMG002' LIMIT 1`
     );
     const listingId = await seedListing(testDb, { partIdentifierId: piRes2.rows[0]!.id });
 

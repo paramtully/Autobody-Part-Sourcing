@@ -102,7 +102,7 @@ describe('GET /fitment/years', () => {
 
     const res = await request(app).get('/fitment/years');
     expect(res.status).toBe(200);
-    const years: number[] = res.body.years.map((y: { year: number }) => y.year);
+    const years: number[] = res.body.years;
     expect(years).toContain(2018);
     expect(years).toContain(2019);
     // No duplicates

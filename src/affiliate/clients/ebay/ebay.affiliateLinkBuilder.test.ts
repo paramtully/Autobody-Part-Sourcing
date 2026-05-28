@@ -1,4 +1,4 @@
-import { EbayAffiliateLinkBuilder } from './ebay.affiliateLinkBuilder';
+import EbayAffiliateLinkBuilder from './ebay.affiliateLinkBuilder';
 
 const MKRID  = '711-53200-19255-0';
 const CAMPID = '5338123456';

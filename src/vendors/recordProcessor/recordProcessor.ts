@@ -1,4 +1,4 @@
-import { VendorRecord, Fitment } from "../clients/vendorRecord";
+import { VendorRecord, Fitment, normalizeVendorRecord } from "../clients/vendorRecord";
 import { db, parts, partIdentifiers, fitments, partFitments, listings, listingImages, warehouseLocations } from "@repo/db";
 import { inArray, and, eq, sql } from "drizzle-orm";
 
@@ -29,6 +29,7 @@ export interface RecordProcessor {
 export default class DrizzleRecordProcessor implements RecordProcessor {
 
     async validateAndUpsert(records: VendorRecord[], vendorId: string): Promise<BatchResult> {
+        records = records.map(normalizeVendorRecord);
         // Phase 1: bulk reads
         const [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
         const fitmentKeyToId = await this.getFitmentMappings(records);

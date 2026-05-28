@@ -1,10 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import * as schema from '../../src/db/models/index';
 
-const MIGRATION_PATH = join(__dirname, '../../src/db/migrations/0000_absent_gorilla_man.sql');
+const MIGRATIONS_DIR = join(__dirname, '../../src/db/migrations');
 
 /**
  * Creates a fresh in-memory pglite database with the full schema applied.
@@ -12,12 +12,18 @@ const MIGRATION_PATH = join(__dirname, '../../src/db/migrations/0000_absent_gori
  */
 export async function createTestDb() {
   const pglite = new PGlite();
-  const sql = readFileSync(MIGRATION_PATH, 'utf8');
 
-  // drizzle-kit uses '--> statement-breakpoint' as a separator between DDL statements
-  const statements = sql.split('--> statement-breakpoint').map(s => s.trim()).filter(Boolean);
-  for (const statement of statements) {
-    await pglite.exec(statement);
+  const migrationFiles = readdirSync(MIGRATIONS_DIR)
+    .filter(f => f.endsWith('.sql'))
+    .sort();
+
+  for (const file of migrationFiles) {
+    const migrationSql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    // drizzle-kit uses '--> statement-breakpoint' as a separator between DDL statements
+    const statements = migrationSql.split('--> statement-breakpoint').map(s => s.trim()).filter(Boolean);
+    for (const statement of statements) {
+      await pglite.exec(statement);
+    }
   }
 
   return drizzle(pglite, { schema });

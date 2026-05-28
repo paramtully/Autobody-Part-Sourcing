@@ -1,5 +1,6 @@
 import { VendorInventoryClient } from "../vendorInventoryClient";
 import { VendorError, VendorErrorType } from "../vendorError";
+import { normalizePartIdentifierValue } from "@repo/db";
 import { AvailabilityStatus, Fitment, PartCondition, UnknownRawVendorRecord, VendorRecord } from "../vendorRecord";
 import {
     eBayItemSchema, buildAspectMap, mapEbayCondition, mapEbayItemAvailability, mapEbayConstraint, mapEbayCategory,
@@ -164,7 +165,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const identifiers: VendorRecord['identifiers'] = [];
         const seen = new Set<string>();
         const addId = (type: 'OEM' | 'AFTERMARKET' | 'INTERCHANGE', value: string, manufacturer?: string, cert?: 'CAPA' | 'NSF') => {
-            const trimmed = value.trim().replace(/-/g, '');
+            const trimmed = normalizePartIdentifierValue(value);
             if (!trimmed || isJunkIdentifier(trimmed)) return;
             const key = `${type}:${trimmed}`;
             if (seen.has(key)) return;

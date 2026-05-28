@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from 'express';
-import { db, partCategoryEnum, partPositionEnum, fitmentConstraintEnum, fitments } from '@repo/db';
+import { db, partCategoryEnum, partPositionEnum, fitmentConstraintEnum, fitments, partFitments } from '@repo/db';
 import { eq, sql, asc, desc } from 'drizzle-orm';
 
 const router = express.Router();
@@ -38,7 +38,7 @@ router.get('/makes-with-models', (req: Request, res: Response) => {
 
 router.get('/years', (req: Request, res: Response) => {
     db.selectDistinct({ year: fitments.year }).from(fitments)
-    .then((rows) => res.status(200).json({ years: rows.map((row) => row.year) }))
+    .then((rows: any[]) => res.status(200).json({ years: rows.map((row: any) => row.year) }))
     .catch((err: Error) => {
         console.log('Failed to get years from database:', err);
         return res.status(500).json({error: 'Error: ' + err});

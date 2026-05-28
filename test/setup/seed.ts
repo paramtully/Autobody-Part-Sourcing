@@ -1,5 +1,6 @@
 import { eq, count } from 'drizzle-orm';
 import { vendors, parts, partIdentifiers, fitments, partFitments, listings } from '../../src/db/models/index';
+import { normalizePartIdentifierValue } from '../../src/db/schema/partIdentifier.schema';
 import type { TestDb } from './pgliteDb';
 
 // ── Seed helpers ──────────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ export async function seedPart(
     await db.insert(partIdentifiers).values({
       partId: part.id,
       type: opts.identifier.type,
-      value: opts.identifier.value,
+      value: normalizePartIdentifierValue(opts.identifier.value),
     });
   }
 

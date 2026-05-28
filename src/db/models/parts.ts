@@ -9,7 +9,9 @@ import {
     primaryKey,
     unique,
     index,
+    check,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import {
     partCategoryEnum,
     partPositionEnum,
@@ -51,6 +53,13 @@ export const partIdentifiers = pgTable(
     (table) => ({
         uniqueIdentifier: unique('part_identifiers_unique').on(table.partId, table.type, table.value, table.manufacturer),
         valueIdx: index('part_identifiers_value_idx').on(table.value),
+        valueFormatCheck: check(
+            'part_identifiers_value_format_check',
+            sql`${table.value} = upper(${table.value})
+                AND ${table.value} NOT LIKE '%-%'
+                AND ${table.value} = btrim(${table.value})
+                AND length(${table.value}) > 0`,
+        ),
     }),
 );
 
