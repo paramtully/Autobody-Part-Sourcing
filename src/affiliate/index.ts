@@ -1,2 +1,2 @@
-export { getAffiliateBuilder } from './affiliateLinkRegistry';
-export type { AffiliateLinkBuilder } from './affiliateLinkBuilder';
+export { default as getAffiliateBuilder } from './affiliateLinkRegistry.js';
+export type { default as AffiliateLinkBuilder } from './affiliateLinkBuilder.js';

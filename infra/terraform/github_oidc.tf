@@ -68,28 +68,28 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Resource = "*"
       },
       {
-        Sid    = "SQS"
-        Effect = "Allow"
-        Action = ["sqs:*"]
+        Sid      = "SQS"
+        Effect   = "Allow"
+        Action   = ["sqs:*"]
         Resource = "*"
       },
       {
-        Sid    = "EventBridge"
-        Effect = "Allow"
-        Action = ["events:*"]
+        Sid      = "EventBridge"
+        Effect   = "Allow"
+        Action   = ["events:*"]
         Resource = "*"
       },
       {
-        Sid    = "SecretsManagerRead"
-        Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+        Sid      = "SecretsManagerRead"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:prod/*"
       },
       {
         Sid    = "TerraformState"
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
-          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource = [
           "arn:aws:s3:::autobody-tfstate-prod",
           "arn:aws:s3:::autobody-tfstate-prod/*",

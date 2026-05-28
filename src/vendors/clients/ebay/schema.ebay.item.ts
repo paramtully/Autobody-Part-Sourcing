@@ -409,7 +409,9 @@ const OEM_PATTERNS: Array<{ pattern: RegExp; manufacturer: string }> = [
     { pattern: /^\d{5}[A-Z0-9]{3}[A-Z0-9]{4}[A-Z]{0,2}$/, manufacturer: 'Honda' },         // 04711TBAA90ZZ (was 04711-TBA-A90ZZ)
     { pattern: /^[0-9][A-Z]\d[A-Z]\d{5}[A-Z]?$/,          manufacturer: 'Ford' },           // 8G1Z13008F
     { pattern: /^\d{5}[A-Z0-9]{4}[A-Z]$/,                 manufacturer: 'Nissan' },          // 622566CA0A (was 62256-6CA0A)
-    { pattern: /^A?\d{10}$/,                               manufacturer: 'Mercedes-Benz' },  // 9068810101
+    // Mercedes: must have A-prefix (genuine MB stamp) or lead with chassis-code "9" (W906/W909 etc.).
+    // Looser /^A?\d{10}$/ collided with Toyota's pure-numeric 10-digit pattern.
+    { pattern: /^(?:A\d{10}|9\d{9})$/,                    manufacturer: 'Mercedes-Benz' },  // A9068810101 or 9068810101
     { pattern: /^\d{10}$/,                                 manufacturer: 'Toyota' },          // 5381112345 (was 53811-12345)
     // Hyundai/Kia share a Mobis-derived scheme; cannot distinguish by pattern alone
     { pattern: /^\d{5}[A-Z0-9]{5}$/,                      manufacturer: 'Hyundai/Kia' },    // 92101D5000

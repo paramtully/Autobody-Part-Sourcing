@@ -13,12 +13,11 @@ import { db, vendors } from '../src/db/index.ts';
 // ── Vendors ───────────────────────────────────────────────────────────────────
 
 (async () => {
-  await db.insert(vendors).values({
-    id: 'ebay',
-    name: 'eBay',
-    vendorType: 'MARKETPLACE',
-    integrationType: 'API',
-  }).onConflictDoNothing();
+  const ebayCommon = { name: 'eBay', vendorType: 'MARKETPLACE' as const, integrationType: 'API' as const };
+  await db.insert(vendors).values([
+    { id: 'ebay-us', ...ebayCommon },
+    { id: 'ebay-ca', ...ebayCommon },
+  ]).onConflictDoNothing();
 
   console.log('Seed complete.');
   process.exit(0);

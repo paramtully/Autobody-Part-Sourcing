@@ -5,7 +5,7 @@
  */
 import { build } from 'esbuild';
 import { createWriteStream, mkdirSync } from 'node:fs';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -42,7 +42,7 @@ await build({
 
 await new Promise((resolve, reject) => {
   const output = createWriteStream(zipPath);
-  const archive = archiver('zip', { zlib: { level: 6 } });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
 
   archive.on('error', reject);
   output.on('close', resolve);

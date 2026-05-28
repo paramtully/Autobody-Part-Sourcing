@@ -7,7 +7,6 @@ import {
   jsonb,
   index,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
 
 /**
  * Transactional outbox. Events are inserted in the same DB transaction as the

@@ -1,12 +1,12 @@
-import { AffiliateLinkBuilder } from '../affiliateLinkBuilder';
+import AffiliateLinkBuilder from '../../affiliateLinkBuilder.js';
 
 const EBAY_HOST_RE = /^https?:\/\/(www\.)?ebay\.(com|ca)\//i;
 
-export class EbayAffiliateLinkBuilder implements AffiliateLinkBuilder {
+export default class EbayAffiliateLinkBuilder implements AffiliateLinkBuilder {
     readonly vendorId = 'ebay';
     readonly enabled: boolean;
-    private readonly mkrid?: string;
-    private readonly campid?: string;
+    private readonly mkrid: string | undefined;
+    private readonly campid: string | undefined;
 
     constructor() {
         this.mkrid  = process.env.EBAY_EPN_MKRID;

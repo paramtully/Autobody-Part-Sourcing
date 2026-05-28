@@ -1,13 +1,13 @@
-import 'dotenv/config';
 import { db, IngestionRunRepo, VendorRepo } from '@repo/db';
 import type { IngestionStats } from '@repo/db';
-import { VendorPipeline, DrizzleRecordProcessor, LKQVendorClient, eBayVendorClient } from '@repo/vendors';
+import { VendorPipeline, DrizzleRecordProcessor, eBayVendorClient } from '@repo/vendors';
 import type { PageResult, VendorInventoryClient } from '@repo/vendors';
 
 // vendorId is the single source of truth — the key is derived from the client, not hardcoded separately
 const ALL_CLIENTS: VendorInventoryClient[] = [
     // new LKQVendorClient(),
-    new eBayVendorClient(),
+    new eBayVendorClient({ vendorId: 'ebay-us', marketplaceId: 'EBAY_US', tradingSiteId: '100' }),
+    new eBayVendorClient({ vendorId: 'ebay-ca', marketplaceId: 'EBAY_CA', tradingSiteId: '2' }),
 ];
 const CLIENTS: Record<string, VendorInventoryClient> = Object.fromEntries(
     ALL_CLIENTS.map(c => [c.vendorId, c]),

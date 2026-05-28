@@ -4,10 +4,10 @@ import type { TestDb } from './pgliteDb';
 
 // ── Seed helpers ──────────────────────────────────────────────────────────────
 
-export async function seedVendor(db: TestDb, id = 'ebay') {
+export async function seedVendor(db: TestDb, id = 'ebay-ca') {
   await db.insert(vendors).values({
     id,
-    name: id === 'ebay' ? 'eBay' : id,
+    name: id.startsWith('ebay') ? 'eBay' : id,
     vendorType: 'MARKETPLACE',
     integrationType: 'API',
     orderingMode: 'NOT_SUPPORTED',
@@ -84,7 +84,7 @@ export async function seedListing(
   const [row] = await db
     .insert(listings)
     .values({
-      vendorId: opts.vendorId ?? 'ebay',
+      vendorId: opts.vendorId ?? 'ebay-ca',
       partIdentifierId: opts.partIdentifierId,
       vendorListingExternalId: opts.externalId ?? `ITEM-${Date.now()}-${Math.random()}`,
       condition: 'RECYCLED',

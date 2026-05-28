@@ -6,7 +6,8 @@
     "apps/workers/*",
     "src/db",
     "src/vendors",
-    "src/ordering"
+    "src/ordering",
+    "src/affiliate"
   ],
   "scripts": {
     "setup": "npx drizzle-kit push && npm run seed",
@@ -16,6 +17,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --forceExit"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@electric-sql/pglite": "^0.4.5",
     "@types/archiver": "^7.0.0",
     "@types/jest": "^29.5.14",
@@ -24,12 +26,56 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.44.0",
     "esbuild": "^0.28.0",
+    "eslint": "^9.39.2",
     "jest": "^29.7.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.9",
-    "tsx": "^4.22.3"
+    "tsx": "^4.22.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
   },
   "dependencies": {
     "fast-xml-parser": "^5.8.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/src/**/*.test.ts",
+      "<rootDir>/apps/api/**/*.test.ts"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/apps/client/"
+    ],
+    "setupFiles": [
+      "<rootDir>/test/setup/env.ts"
+    ],
+    "moduleNameMapper": {
+      "^@repo/db$": "<rootDir>/src/db/index.ts",
+      "^@repo/db/schemas$": "<rootDir>/src/db/index.ts",
+      "^@repo/db/(.*)$": "<rootDir>/src/db/$1",
+      "^@repo/vendors$": "<rootDir>/src/vendors/index.ts",
+      "^@repo/ordering$": "<rootDir>/src/ordering/index.ts",
+      "^@repo/ordering/(.*)$": "<rootDir>/src/ordering/$1",
+      "^@repo/affiliate$": "<rootDir>/src/affiliate/index.ts",
+      "^@repo/affiliate/(.*)$": "<rootDir>/src/affiliate/$1",
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "transform": {
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {
+          "diagnostics": false,
+          "tsconfig": {
+            "module": "CommonJS",
+            "moduleResolution": "node",
+            "esModuleInterop": true,
+            "allowSyntheticDefaultImports": true,
+            "strict": false
+          }
+        }
+      ]
+    }
   }
 }

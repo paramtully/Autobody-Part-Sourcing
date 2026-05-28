@@ -1,7 +1,8 @@
 {
-  "name": "@repo/vendors",
+  "name": "@repo/affiliate",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "exports": {
     ".": "./index.ts"
   },
@@ -9,8 +10,5 @@
     "lint": "eslint . -c ../../eslint.node.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@repo/db": "*"
   }
 }

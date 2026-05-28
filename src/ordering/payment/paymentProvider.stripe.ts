@@ -18,8 +18,7 @@ import type {
 } from './paymentProvider';
 import { PaymentDeclinedError, PaymentInvalidRequestError, PaymentProviderError } from './paymentError';
 
-// Stripe.Stripe is the instance type available in the CJS namespace.
-type StripeClient = Stripe.Stripe;
+type StripeClient = InstanceType<typeof Stripe>;
 
 // Minimal inline shapes for webhook objects — avoids relying on CJS-unavailable types.
 interface StripeWebhookEvent {

@@ -120,7 +120,7 @@ describe('GET /fitment/:partId', () => {
     expect(res.body.fitments).toEqual([]);
   });
 
-  it('normal — aggregates make/model across years with min/max', async () => {
+  it('normal — returns one row per distinct (make, model, year) for client-side range coalescing', async () => {
     const partId = await seedPart(testDb);
     const { partFitments } = await import('../../../src/db/models/parts');
 
@@ -131,11 +131,10 @@ describe('GET /fitment/:partId', () => {
 
     const res = await request(app).get(`/fitment/${partId}`);
     expect(res.status).toBe(200);
-    expect(res.body.fitments).toHaveLength(1);
-    const fitment = res.body.fitments[0];
-    expect(fitment.make).toBe('HONDA');
-    expect(fitment.model).toBe('CIVIC');
-    expect(fitment.minYear).toBe(2018);
-    expect(fitment.maxYear).toBe(2021);
+    // Route returns raw per-year rows ordered by year DESC; client coalesces into ranges for display.
+    expect(res.body.fitments).toHaveLength(4);
+    expect(res.body.fitments.every((f: { make: string; model: string }) => f.make === 'HONDA' && f.model === 'CIVIC')).toBe(true);
+    const years = res.body.fitments.map((f: { year: number }) => f.year);
+    expect(years).toEqual([2021, 2020, 2019, 2018]);
   });
 });

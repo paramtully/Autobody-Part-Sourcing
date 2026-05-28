@@ -1,4 +1,4 @@
-import { eq, and, lt, or, isNull, sql } from 'drizzle-orm';
+import { eq, and, lt, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { Db, db } from '../client';
 import { orders, checkoutQuotes } from '../models/index.js';

@@ -5,7 +5,7 @@
  * This file imports ONLY from @repo/ordering (the abstract interface) —
  * NO Stripe imports. Stripe-specific logic lives in StripePaymentAdapter.
  */
-import express, { type Request, type Response, type Router } from 'express';
+import express, { type Request, type Response } from 'express';
 import type { PaymentProviderAdapter } from '@repo/ordering';
 import { PaymentService } from '@repo/ordering';
 import { StripePaymentAdapter } from '@repo/ordering/stripe';

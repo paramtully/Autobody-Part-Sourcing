@@ -35,6 +35,19 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# TypeScript compile output emitted beside source (composite project references)
+**/*.js.map
+**/*.d.ts.map
+src/**/*.js
+src/**/*.d.ts
+apps/api/**/*.js
+apps/api/**/*.d.ts
+apps/workers/listingWorker/**/*.js
+apps/workers/listingWorker/**/*.d.ts
+apps/workers/paymentWorker/**/*.js
+apps/workers/paymentWorker/**/*.d.ts
+apps/workers/dist/
+
 # local files
 context.md
 

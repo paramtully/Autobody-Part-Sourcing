@@ -21,7 +21,7 @@ afterEach(() => restoreFetch());
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeClient() {
-  return new eBayVendorClient();
+  return new eBayVendorClient({ vendorId: 'ebay-ca', marketplaceId: 'EBAY_CA', tradingSiteId: '2' });
 }
 
 /** Returns a mock sequence that satisfies auth + one search + N item-detail calls. */
@@ -36,9 +36,8 @@ function authThenSearch(itemDetailResponses: unknown[]) {
 // ── identity ──────────────────────────────────────────────────────────────────
 
 describe('identity', () => {
-  it('vendorId is "ebay" and matches slug pattern', () => {
+  it('vendorId matches slug pattern', () => {
     const client = makeClient();
-    expect(client.vendorId).toBe('ebay');
     expect(client.vendorId).toMatch(/^[a-z0-9-]+$/);
   });
 });
@@ -55,9 +54,11 @@ describe('mapRecord', () => {
     expect(record.part.category).toBe('BUMPER_COVER');
     expect(record.part.position).toBe('FRONT_BUMPER');
 
-    // identifiers: 4 Partslink NI... (AFTERMARKET/Nissan) + OE cross-refs + Interchange
-    // Classifier detects NI prefix → AFTERMARKET/Nissan despite brand being "Texas-E-Parts"
-    expect(record.identifiers.length).toBeGreaterThanOrEqual(7);
+    // identifiers: 4 Partslink NI... (AFTERMARKET/Nissan) + 2 unique OEM cross-refs.
+    // Classifier detects NI prefix → AFTERMARKET/Nissan despite brand being "Texas-E-Parts".
+    // Interchange aspect values that match the Nissan OEM pattern collapse into existing
+    // OEM keys (dedup by `${type}:${dashStrippedValue}`), keeping the identifier set tight.
+    expect(record.identifiers.length).toBeGreaterThanOrEqual(6);
     expect(record.identifiers.some(i => i.value === 'NI1039163')).toBe(true);
     expect(record.identifiers.some(i => i.value === 'NI1000323')).toBe(true);
     const ni = record.identifiers.find(i => i.value === 'NI1039163')!;

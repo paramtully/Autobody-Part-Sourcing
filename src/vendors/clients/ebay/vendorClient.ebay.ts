@@ -56,12 +56,19 @@ function splitAspect(value: string | undefined): string[] {
     return value.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
 }
 
+interface eBayVendorClientOptions {
+    vendorId: string;       // e.g. 'ebay-us' | 'ebay-ca'
+    marketplaceId: string;  // e.g. 'EBAY_US' | 'EBAY_CA'
+    tradingSiteId: string;  // '100' = US Motors, '2' = eBay CA
+}
+
 interface eBayConfig {
     vendorId: string;
     apiKey: string;
     apiSecret: string;
     apiUrl: string;
     marketplaceId: string;
+    tradingSiteId: string;
     token?: string;
     tokenExpiresAt?: Date;
     inFlightToken: boolean;
@@ -73,8 +80,8 @@ interface eBayConfig {
 }
 
 export default class eBayVendorClient implements VendorInventoryClient {
-    readonly vendorId = 'ebay';
-    private readonly DEFAULT_PAGE_SIZE = 20;
+    readonly vendorId: string;
+    private readonly DEFAULT_PAGE_SIZE = 200;
     // Targeted body-panel sub-categories (eBay Motors category tree).
     // These drive precise inventory rather than the noisy 'auto body part' keyword search.
     // NOTE: reset any in-progress ingestion_runs rows before deploying — the offset cursor
@@ -89,16 +96,22 @@ export default class eBayVendorClient implements VendorInventoryClient {
         '33556',  // Doors
         '33567',  // Hoods
     ];
-    readonly config: eBayConfig = {
-        vendorId: this.vendorId,
-        apiKey: process.env.EBAY_API_KEY!,
-        apiSecret: process.env.EBAY_API_SECRET!,
-        apiUrl: process.env.EBAY_API_URL! || 'https://api.ebay.com',
-        marketplaceId: process.env.EBAY_MARKETPLACE_ID || 'EBAY_CA',
-        inFlightToken: false,
-        ruName: process.env.EBAY_RU_NAME || undefined,
-        refreshToken: process.env.EBAY_USER_REFRESH_TOKEN || undefined,
-    };
+    readonly config: eBayConfig;
+
+    constructor(opts: eBayVendorClientOptions) {
+        this.vendorId = opts.vendorId;
+        this.config = {
+            vendorId: opts.vendorId,
+            apiKey: process.env.EBAY_API_KEY!,
+            apiSecret: process.env.EBAY_API_SECRET!,
+            apiUrl: process.env.EBAY_API_URL || 'https://api.ebay.com',
+            marketplaceId: opts.marketplaceId,
+            tradingSiteId: opts.tradingSiteId,
+            inFlightToken: false,
+            ruName: process.env.EBAY_RU_NAME || undefined,
+            refreshToken: process.env.EBAY_USER_REFRESH_TOKEN || undefined,
+        };
+    }
 
     mapRecord(raw: UnknownRawVendorRecord): VendorRecord {
         const record = eBayItemSchema.safeParse(raw);
@@ -431,7 +444,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         const worker = async () => {
             while (queue.length > 0) {
                 const id = queue.shift()!;
-                byLegacy.set(id, await fetchEbayItemCompatibilities(id, userToken, this.config.apiUrl));
+                byLegacy.set(id, await fetchEbayItemCompatibilities(id, userToken, this.config.apiUrl, this.config.tradingSiteId));
             }
         };
         await Promise.all(Array.from({ length: concurrency }, worker));

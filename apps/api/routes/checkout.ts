@@ -1,4 +1,4 @@
-import express, { type Request, type Response, type Router } from 'express';
+import express, { type Request, type Response } from 'express';
 import { CheckoutService } from '@repo/ordering';
 import { CheckoutError, QuoteExpiredError, NotFoundError } from '@repo/ordering';
 import { quoteBodySchema, confirmBodySchema } from '@repo/db';

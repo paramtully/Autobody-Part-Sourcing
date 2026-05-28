@@ -5,7 +5,10 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx -e \"import('./handler.js').then(m => m.handler())\""
+    "dev": "node --env-file=../../../.env ../../../node_modules/.bin/tsx -e \"import('./handler.js').then(m => m.handler())\"",
+    "lint": "eslint . -c ../../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "build": "node ../build.mjs listingWorker"
   },
   "dependencies": {
     "@repo/db": "*",

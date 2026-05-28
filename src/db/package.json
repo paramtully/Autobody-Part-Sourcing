@@ -7,6 +7,11 @@
     ".": "./index.ts",
     "./*": "./*.ts"
   },
+  "scripts": {
+    "lint": "eslint . -c ../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --build"
+  },
   "dependencies": {
     "drizzle-orm": "^0.44.0",
     "postgres": "^3.4.8"

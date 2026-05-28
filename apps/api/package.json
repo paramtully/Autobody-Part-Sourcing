@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx watch server.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node --env-file=../../.env ../../node_modules/.bin/tsx watch server.ts",
+    "lint": "eslint . -c ../../eslint.node.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "build": "tsc --noEmit -p tsconfig.check.json"
   },
   "keywords": [],
   "author": "",

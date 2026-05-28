@@ -66,7 +66,9 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
     const processor = new DrizzleRecordProcessor();
     const result = await processor.validateAndUpsert([makeRecord()], 'ebay');
 
-    expect(result).toEqual({ succeeded: 1, failed: 0, skipped: 0 });
+    // toMatchObject permits the additional `newParts` field the processor returns
+    // for downstream Trading API fitment enrichment of newly created parts.
+    expect(result).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
 
     const partRes = await testDb.execute<{ cnt: string }>(`SELECT count(*)::text AS cnt FROM parts`);
     expect(parseInt(partRes.rows[0]!.cnt, 10)).toBe(1);
@@ -128,7 +130,7 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
     });
 
     const result1 = await processor.validateAndUpsert([recordA], 'ebay');
-    expect(result1).toEqual({ succeeded: 1, failed: 0, skipped: 0 });
+    expect(result1).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
 
     const result2 = await processor.validateAndUpsert([recordB], 'ebay');
     expect(result2.succeeded).toBe(1);

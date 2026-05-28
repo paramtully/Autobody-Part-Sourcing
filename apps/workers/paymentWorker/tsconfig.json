@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "paths": {
-      "@repo/db": ["../../src/db/index.ts"],
-      "@repo/ordering": ["../../src/ordering/index.ts"],
-      "@repo/ordering/stripe": ["../../src/ordering/payment/paymentProvider.stripe.ts"]
+      "@repo/db": ["../../../src/db/index.ts"],
+      "@repo/ordering": ["../../../src/ordering/index.ts"],
+      "@repo/ordering/stripe": ["../../../src/ordering/payment/paymentProvider.stripe.ts"]
     },
 
     "module": "nodenext",
@@ -24,8 +24,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "references": [
-    { "path": "../../src/db" },
-    { "path": "../../src/ordering" }
-  ]
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "**/*.test.ts"]
 }

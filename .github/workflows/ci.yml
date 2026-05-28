@@ -1,43 +1,62 @@
 name: CI
-# on:
-#   [push, pull_request]
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
+  [push, pull_request]
 
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: 20
+
 jobs:
-  validate:
+  app:
+    name: App Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - run: npm ci --workspaces --include-workspace-root
+      - name: Install dependencies
+        run: npm ci --workspaces --include-workspace-root
+      
+      - name: Run lint
+        run: npm run -ws --if-present lint
 
-      - run: npm run -ws --if-present typecheck
+      - name: Run typecheck
+        run: npm run -ws --if-present typecheck
 
-      - run: npm run -ws --if-present test
+      - name: Run tests
+        run: npm run -ws --if-present test
+      
+      - name: Run build
+        run: npm run -ws --if-present build
 
       # Fail on high-severity vulnerabilities in production deps only
-      - run: npm audit --audit-level=high --omit=dev || true
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev || true
 
-      - uses: hashicorp/setup-terraform@v3
+  infra:
+    name: Infrastructure Validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    env:
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_github_repo: ${{ github.event.repository.name }}
 
-      - run: terraform -chdir=infra/terraform fmt -check
+    steps:
+      - uses: actions/checkout@v4
 
-      - run: terraform -chdir=infra/terraform validate
-        env:
-          # validate needs provider config but no real credentials
-          TF_VAR_github_owner: placeholder
-          TF_VAR_github_repo: placeholder
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check terraform formatting
+        run: terraform fmt -check
+
+      - run: terraform validate

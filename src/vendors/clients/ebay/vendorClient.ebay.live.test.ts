@@ -27,7 +27,7 @@ live('eBay live smoke', () => {
   let client: eBayVendorClient;
 
   beforeAll(() => {
-    client = new eBayVendorClient();
+    client = new eBayVendorClient({ vendorId: 'ebay-ca', marketplaceId: 'EBAY_CA', tradingSiteId: '2' });
   });
 
   it('getAuthStatus() returns valid=true with a future expiresAt', async () => {

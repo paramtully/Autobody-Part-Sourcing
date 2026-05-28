@@ -16,6 +16,7 @@ export async function fetchEbayItemCompatibilities(
     legacyItemId: string,
     token: string,
     apiUrl: string,
+    siteId: string,
 ): Promise<Fitment[]> {
     const baseUrl = apiUrl.replace('api.sandbox.ebay.com', 'api.ebay.com'); // Trading API has no sandbox equivalent
     const xml = `<?xml version="1.0" encoding="utf-8"?><GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><ItemID>${legacyItemId}</ItemID><IncludeItemCompatibilityList>true</IncludeItemCompatibilityList><DetailLevel>ReturnAll</DetailLevel></GetItemRequest>`;
@@ -28,7 +29,7 @@ export async function fetchEbayItemCompatibilities(
                 'Content-Type': 'text/xml',
                 'X-EBAY-API-CALL-NAME': 'GetItem',
                 'X-EBAY-API-COMPATIBILITY-LEVEL': '1193',
-                'X-EBAY-API-SITEID': '100',
+                'X-EBAY-API-SITEID': siteId,
                 'X-EBAY-API-IAF-TOKEN': token,
             },
             body: xml,

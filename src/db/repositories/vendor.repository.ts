@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../client';
-import { vendors, warehouseLocations, vendorWarehouseLocations } from '../models/index.js';
+import { vendors } from '../models/index.js';
 
 export type VendorRow = typeof vendors.$inferSelect;
 export type VendorInsert = typeof vendors.$inferInsert;

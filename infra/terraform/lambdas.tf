@@ -27,23 +27,3 @@ resource "aws_lambda_function" "listing" {
 
   tags = { vendor = each.key }
 }
-
-# ── paymentWorker ─────────────────────────────────────────────────────────────
-resource "aws_lambda_function" "payment" {
-  function_name = "payment-worker"
-  role          = aws_iam_role.payment_exec.arn
-  handler       = "outboxWorker.handler"
-  runtime       = "nodejs20.x"
-  timeout       = 60
-
-  filename = "${path.module}/placeholder.zip"
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
-
-  environment {
-    variables = {
-      DATABASE_URL = data.aws_secretsmanager_secret_version.supabase.secret_string
-    }
-  }
-}

@@ -3,11 +3,6 @@ output "listing_fn_names" {
   value       = [for fn in aws_lambda_function.listing : fn.function_name]
 }
 
-output "payment_fn_name" {
-  description = "paymentWorker Lambda function name"
-  value       = aws_lambda_function.payment.function_name
-}
-
 output "outbox_queue_url" {
   description = "SQS outbox queue URL — set as OUTBOX_QUEUE_URL on the Vercel API project"
   value       = aws_sqs_queue.outbox.url
