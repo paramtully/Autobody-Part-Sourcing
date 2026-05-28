@@ -10,6 +10,7 @@ import {
     check,
     index,
     unique,
+    jsonb,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import {
@@ -56,6 +57,7 @@ export const listings = pgTable( 'listings', {
         isActive: boolean('is_active').default(true).notNull(),
         // Used for change detection: skip ingestion upsert when hash matches
         payloadHash: text('payload_hash'),
+        rawPayload: jsonb('raw_payload'),
         // Lifecycle: set last_seen_at each ingestion; mark inactive if stale
         lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

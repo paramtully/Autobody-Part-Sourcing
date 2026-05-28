@@ -31,7 +31,7 @@ jobs:
         run: npm run -ws --if-present typecheck
 
       - name: Run tests
-        run: npm run -ws --if-present test
+        run: npm run test
       
       - name: Run build
         run: npm run -ws --if-present build
@@ -42,13 +42,18 @@ jobs:
 
   infra:
     name: Infrastructure Validation
-    runs-on: ubuntu-latest
+
+    if: >-
+      github.event.workflow_run.head_branch == 'main'
+      
     defaults:
       run:
         working-directory: infra/terraform
     env:
       TF_VAR_github_owner: ${{ github.repository_owner }}
       TF_VAR_github_repo: ${{ github.event.repository.name }}
+    
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4

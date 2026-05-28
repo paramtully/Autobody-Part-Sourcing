@@ -25,6 +25,7 @@ export function normalizeVendorRecord(record: VendorRecord): VendorRecord {
 }
 
 export interface VendorRecord {
+    rawPayload?: unknown;   // original vendor API response, for debugging / training data
     part: {
       name: string;
       category: string;

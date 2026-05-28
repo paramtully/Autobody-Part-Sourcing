@@ -185,6 +185,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                         warehouseLocationId: warehouseLocationId ?? null,
                         confidenceScore: confidence.toString(),
                         source: 'VENDOR_API',
+                        rawPayload: record.rawPayload ?? null,
                         lastSeenAt: now,
                         lastVerifiedAt: now,
                     })
@@ -202,6 +203,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                             sourceVehicleVin: l.sourceVehicleVin,
                             sourceDamageType: l.sourceDamageType,
                             confidenceScore: confidence.toString(),
+                            rawPayload: record.rawPayload ?? null,
                             isActive: true,
                             lastSeenAt: now,
                             lastVerifiedAt: now,

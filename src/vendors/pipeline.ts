@@ -26,7 +26,7 @@ export class VendorPipeline {
         }
 
         const page = await this.client.fetchInventoryPage(cursor);
-        const mapped = page.records.map(r => this.client.mapRecord(r));
+        const mapped = page.records.map(r => ({ ...this.client.mapRecord(r), rawPayload: r }));
         const result = await this.processor.validateAndUpsert(mapped, this.client.vendorId);
 
         if (result.newParts.length > 0 && this.client.fetchFitmentsForNewParts) {
