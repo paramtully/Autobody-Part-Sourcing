@@ -1,3 +1,15 @@
+variable "application" {
+  type        = string
+  description = "Application name for AWS console grouping (myApplications) and cost allocation"
+  default     = "autobody-part-sourcing"
+}
+
+variable "environment" {
+  type        = string
+  description = "Deployment environment (prod, staging, etc.)"
+  default     = "prod"
+}
+
 variable "aws_region" {
   type    = string
   default = "us-west-2"

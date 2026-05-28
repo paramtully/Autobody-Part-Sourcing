@@ -5,32 +5,28 @@ They cannot be automated because there is no prior trust anchor.
 
 ## 1. S3 Terraform state bucket + DynamoDB lock
 
+After creating these resources, tag them in **Resource Groups → Tag Editor** (or CLI) so they appear in the same myApplications app as Terraform-managed resources:
+
+| Key | Value |
+|-----|--------|
+| `Application` | `autobody-part-sourcing` |
+| `Environment` | `prod` |
+| `ManagedBy` | `manual` |
+
+Apply to: S3 bucket `autobody-tfstate-prod`, DynamoDB table `autobody-tfstate-lock`, and secret `prod/supabase/database_url` (bootstrap-only; not in Terraform state).
+
 ```bash
-aws s3api create-bucket \
-  --bucket autobody-tfstate-prod \
-  --region us-west-2 \
-  --create-bucket-configuration LocationConstraint=us-west-2
+# One line per command — avoids broken line continuations when copying from the doc.
 
-aws s3api put-bucket-versioning \
-  --bucket autobody-tfstate-prod \
-  --versioning-configuration Status=Enabled
+aws s3api create-bucket --bucket autobody-tfstate-prod --region us-west-2 --create-bucket-configuration LocationConstraint=us-west-2
 
-aws s3api put-bucket-encryption \
-  --bucket autobody-tfstate-prod \
-  --server-side-encryption-configuration \
-    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-bucket-versioning --bucket autobody-tfstate-prod --versioning-configuration Status=Enabled
 
-aws s3api put-public-access-block \
-  --bucket autobody-tfstate-prod \
-  --public-access-block-configuration \
-    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+aws s3api put-bucket-encryption --bucket autobody-tfstate-prod --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 
-aws dynamodb create-table \
-  --table-name autobody-tfstate-lock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region us-west-2
+aws s3api put-public-access-block --bucket autobody-tfstate-prod --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+
+aws dynamodb create-table --table-name autobody-tfstate-lock --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST --region us-west-2
 ```
 
 ## 2. GitHub Actions OIDC provider in AWS
