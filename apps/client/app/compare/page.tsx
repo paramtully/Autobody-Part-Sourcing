@@ -175,7 +175,7 @@ export default function ComparePage() {
       <Container wide className="py-6 overflow-x-auto">
         {/* Print header */}
         <div className="hidden print:block mb-4">
-          <h1 className="text-[18px] font-bold">Part Comparison — Partsync</h1>
+          <h1 className="text-[18px] font-bold">Part Comparison — Boneyard</h1>
           <p className="text-[12px] text-gray-500">{new Date().toLocaleDateString()}</p>
         </div>
 

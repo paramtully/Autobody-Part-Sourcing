@@ -40,12 +40,40 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=high --omit=dev || true
 
+  live-tests:
+    name: Live integration tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      LIVE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --workspaces --include-workspace-root
+
+      - name: Run live integration tests
+        run: npm run test:live
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EBAY_API_KEY: ${{ secrets.EBAY_API_KEY }}
+          EBAY_API_SECRET: ${{ secrets.EBAY_API_SECRET }}
+          EBAY_USER_REFRESH_TOKEN: ${{ secrets.EBAY_USER_REFRESH_TOKEN }}
+          EBAY_RU_NAME: ${{ secrets.EBAY_RU_NAME }}
+
   infra:
     name: Infrastructure Validation
 
     if: >-
-      github.event.workflow_run.head_branch == 'main'
-      
+      github.ref == 'refs/heads/main' ||
+      github.base_ref == 'main'
+
     defaults:
       run:
         working-directory: infra/terraform
@@ -60,6 +88,8 @@ jobs:
 
       - name: Install Terraform CLI
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
 
       - name: Check terraform formatting
         run: terraform fmt -check

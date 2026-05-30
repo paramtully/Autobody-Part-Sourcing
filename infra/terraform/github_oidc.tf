@@ -62,15 +62,7 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Action = ["iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:DeleteRole",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PutRolePolicy",
           "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
-          "iam:CreateUser", "iam:DeleteUser", "iam:GetUser",
-          "iam:PutUserPolicy", "iam:DeleteUserPolicy", "iam:GetUserPolicy",
         ]
-        Resource = "*"
-      },
-      {
-        Sid      = "SQS"
-        Effect   = "Allow"
-        Action   = ["sqs:*"]
         Resource = "*"
       },
       {
@@ -78,12 +70,6 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Effect   = "Allow"
         Action   = ["events:*"]
         Resource = "*"
-      },
-      {
-        Sid      = "SecretsManagerRead"
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:prod/*"
       },
       {
         Sid    = "TerraformState"

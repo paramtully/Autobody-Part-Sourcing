@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    vercel = {
+      source  = "vercel/vercel"
+      version = "~> 3.0"
+    }
   }
 
   backend "s3" {

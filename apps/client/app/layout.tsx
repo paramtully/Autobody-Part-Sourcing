@@ -5,7 +5,7 @@ import Topbar from '@/components/layout/Topbar';
 import Footer from '@/components/layout/Footer';
 
 export const metadata: Metadata = {
-  title: 'Partsync — Collision Parts Sourcing',
+  title: 'Boneyard — Collision Parts Sourcing',
   description:
     'Search OEM, aftermarket, and salvage parts from every connected vendor in one place. Purpose-built for collision repair shops.',
 };

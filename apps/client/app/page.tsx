@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchVendors } from '@/lib/api';
+import { uniqueVendorsByName } from '@/lib/vendors';
 import Container from '@/components/layout/Container';
 import { Search, GitCompare, ExternalLink, Phone, Clock, ShieldCheck, Star, Zap, BarChart3, ArrowRight, CheckCircle } from 'lucide-react';
 
@@ -14,6 +15,7 @@ async function getLandingData() {
 
 export default async function LandingPage() {
   const { vendors } = await getLandingData();
+  const displayVendors = uniqueVendorsByName(vendors);
 
   return (
     <div className="bg-[#F7F8FA]">
@@ -98,10 +100,10 @@ export default async function LandingPage() {
               Aggregating inventory from:
             </p>
             <div className="flex flex-wrap gap-2">
-              {vendors.length > 0 ? (
-                vendors.map(v => (
+              {displayVendors.length > 0 ? (
+                displayVendors.map(v => (
                   <span
-                    key={v.id}
+                    key={v.name}
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#F7F8FA] border border-[#E5E7EB] rounded-md text-[12px] font-medium text-[#475569]"
                   >
                     <span
@@ -217,17 +219,17 @@ export default async function LandingPage() {
             </div>
             <div className="bg-[#111827] rounded-xl p-6 text-white">
               <p className="text-[12px] text-white/50 uppercase tracking-wide mb-3">Searchable vendors</p>
-              {vendors.length === 0 ? (
+              {displayVendors.length === 0 ? (
                 <p className="text-[13px] text-white/40 py-2">Loading vendor list…</p>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {(['OEM', 'AFTERMARKET', 'SALVAGE', 'MARKETPLACE'] as const)
-                    .filter(type => vendors.some(v => v.vendorType === type))
+                    .filter(type => displayVendors.some(v => v.vendorType === type))
                     .map(type => (
                       <div key={type} className="bg-white/5 rounded-lg p-3">
                         <p className="text-[11px] text-white/50 mb-1">{type}</p>
                         <p className="text-[13px] font-medium">
-                          {vendors.filter(v => v.vendorType === type).length} connected
+                          {displayVendors.filter(v => v.vendorType === type).length} connected
                         </p>
                       </div>
                     ))}

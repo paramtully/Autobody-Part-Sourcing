@@ -13,7 +13,7 @@ export default function Topbar() {
   return (
     <header className="sticky top-0 z-50 h-12 border-b flex items-center px-6 bg-[#111827] text-white">
       <Link href="/" className="font-semibold tracking-tight text-white text-[15px] mr-8 shrink-0">
-        Partsync
+        Boneyard
       </Link>
 
       <nav className="flex items-center gap-1 flex-1">

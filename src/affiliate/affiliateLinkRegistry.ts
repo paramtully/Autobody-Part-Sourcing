@@ -3,10 +3,9 @@ import EbayAffiliateLinkBuilder from './clients/ebay/ebay.affiliateLinkBuilder.j
 
 const NOOP: AffiliateLinkBuilder = { vendorId: 'noop', enabled: false, wrap: () => null };
 
-const ebayBuilder = new EbayAffiliateLinkBuilder();
 const builders = new Map<string, AffiliateLinkBuilder>([
-    ['ebay-us', ebayBuilder],
-    ['ebay-ca', ebayBuilder],
+    ['ebay-us', new EbayAffiliateLinkBuilder('ebay-us')],
+    ['ebay-ca', new EbayAffiliateLinkBuilder('ebay-ca')],
 ]);
 
 export default function getAffiliateBuilder(vendorId: string): AffiliateLinkBuilder {

@@ -15,6 +15,7 @@
   "type": "module",
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1047.0",
+    "@repo/affiliate": "*",
     "@repo/db": "*",
     "@repo/ordering": "*",
     "cors": "^2.8.6",

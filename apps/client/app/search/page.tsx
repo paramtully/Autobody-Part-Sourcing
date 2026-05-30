@@ -25,7 +25,7 @@ export default function SearchPage() {
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col items-center pt-16 pb-24 px-4">
       {/* Logo / header */}
       <div className="mb-8 text-center">
-        <h1 className="text-[28px] font-bold text-[#0B1220] tracking-tight">Partsync</h1>
+        <h1 className="text-[28px] font-bold text-[#0B1220] tracking-tight">Boneyard</h1>
         <p className="text-[14px] text-[#475569] mt-1">Collision parts from every vendor, one search</p>
       </div>
 

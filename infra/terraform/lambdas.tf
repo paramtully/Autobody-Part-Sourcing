@@ -18,11 +18,10 @@ resource "aws_lambda_function" "listing" {
   }
 
   environment {
-    variables = {
-      DATABASE_URL       = data.aws_secretsmanager_secret_version.supabase.secret_string
+    variables = merge(local.listing_worker_env, {
       VENDOR_ID          = each.key
       INGEST_INTERVAL_MS = tostring(each.value.interval_ms)
-    }
+    })
   }
 
   tags = { vendor = each.key }

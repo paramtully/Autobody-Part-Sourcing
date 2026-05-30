@@ -28,7 +28,6 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-      && false
     runs-on: ubuntu-latest
     outputs:
       infra: ${{ steps.filter.outputs.infra }}
@@ -75,20 +74,34 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
 
-  # ── Terraform: apply only when infra changes; export listing Lambda names
+  # ── Terraform: AWS infra + Vercel projects/env (secrets flow GitHub → TF → Vercel)
   terraform:
     name: Terraform
     needs: changes
     if: >-
       needs.changes.outputs.infra == 'true' ||
-      needs.changes.outputs.deploy_listing_lambda == 'true' 
+      needs.changes.outputs.deploy_listing_lambda == 'true' ||
+      needs.changes.outputs.deploy_api == 'true' ||
+      needs.changes.outputs.deploy_client == 'true'
     runs-on: ubuntu-latest
     environment: production
     defaults:
       run:
         working-directory: infra/terraform
+    env:
+      TF_VAR_vercel_api_token: ${{ secrets.VERCEL_TOKEN }}
+      TF_VAR_vercel_team_id: ${{ vars.VERCEL_ORG_ID }}
+      TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+      TF_VAR_database_url: ${{ secrets.DATABASE_URL }}
+      TF_VAR_ebay_api_key: ${{ secrets.EBAY_API_KEY }}
+      TF_VAR_ebay_api_secret: ${{ secrets.EBAY_API_SECRET }}
+      TF_VAR_ebay_user_refresh_token: ${{ secrets.EBAY_USER_REFRESH_TOKEN }}
+      TF_VAR_ebay_ru_name: ${{ secrets.EBAY_RU_NAME }}
+      TF_VAR_ebay_epn_campid: ${{ secrets.EBAY_EPN_CAMPID }}
     outputs:
       listing_fns: ${{ steps.tf.outputs.listing_fns }}
+      vercel_api_project_id: ${{ steps.tf.outputs.vercel_api_project_id }}
+      vercel_client_project_id: ${{ steps.tf.outputs.vercel_client_project_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,12 +113,36 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
 
       - run: terraform init
 
       - name: Terraform apply
         if: needs.changes.outputs.infra == 'true'
         run: terraform apply -auto-approve
+
+      - name: Sync Vercel projects and env vars
+        if: >-
+          needs.changes.outputs.deploy_api == 'true' ||
+          needs.changes.outputs.deploy_client == 'true' ||
+          needs.changes.outputs.infra == 'true'
+        run: |
+          terraform apply -auto-approve \
+            -target=vercel_project.api \
+            -target=vercel_project.client \
+            -target=vercel_project_domain.api \
+            -target=vercel_project_domain.client \
+            -target=vercel_project_domain.client_www \
+            -target=vercel_project_environment_variable.api_database_url \
+            -target=vercel_project_environment_variable.api_ebay_epn_campid \
+            -target=vercel_project_environment_variable.client_api_base_url
+
+      - name: Refresh listing Lambda environment
+        if: >-
+          needs.changes.outputs.deploy_listing_lambda == 'true' &&
+          needs.changes.outputs.infra != 'true'
+        run: terraform apply -auto-approve -target=aws_lambda_function.listing
 
       - name: Export Terraform outputs
         id: tf
@@ -115,6 +152,10 @@ jobs:
           echo "listing_fns<<EOF" >> "$GITHUB_OUTPUT"
           terraform output -json listing_fn_names >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
+          if terraform output vercel_api_project_id >/dev/null 2>&1; then
+            echo "vercel_api_project_id=$(terraform output -raw vercel_api_project_id)" >> "$GITHUB_OUTPUT"
+            echo "vercel_client_project_id=$(terraform output -raw vercel_client_project_id)" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── DB migrations (schema / drizzle config / lockfile) ───────────────────────
   migrate:
@@ -138,7 +179,7 @@ jobs:
       - name: Run migrations
         run: npx drizzle-kit migrate
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL }}
+          DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL || secrets.DATABASE_URL }}
 
   # ── listingWorker Lambda (esbuild bundles @repo/db + @repo/vendors) ─────────
   lambdas:
@@ -189,11 +230,12 @@ jobs:
   # ── Vercel: API (apps/api + @repo/db, ordering, affiliate) ─────────────────
   deploy-api:
     name: Deploy API
-    needs: [changes, migrate]
+    needs: [changes, migrate, terraform]
     if: >-
       always() &&
       !cancelled() &&
       needs.changes.result == 'success' &&
+      needs.terraform.result == 'success' &&
       needs.changes.outputs.deploy_api == 'true' &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
@@ -214,28 +256,33 @@ jobs:
         working-directory: apps/api
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
 
       - name: Build API
         working-directory: apps/api
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
 
       - name: Deploy API
         working-directory: apps/api
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
 
   # ── Vercel: client (no @repo workspace deps) ─────────────────────────────────
   deploy-client:
     name: Deploy Client
-    needs: changes
-    if: needs.changes.outputs.deploy_client == 'true'
+    needs: [changes, terraform]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.terraform.result == 'success' &&
+      needs.changes.outputs.deploy_client == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -254,24 +301,24 @@ jobs:
         working-directory: apps/client
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
 
       - name: Build Client
         working-directory: apps/client
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
 
       - name: Deploy Client
         working-directory: apps/client
         run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_CLIENT }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
 
-  # ── Post-deploy smoke checks (set repo variables PRODUCTION_API_URL / CLIENT) ─
+  # ── Post-deploy smoke checks (URLs derived from DOMAIN_NAME) ─────────────────
   healthcheck:
     name: Production health checks
     needs: [deploy-api, deploy-client, lambdas]
@@ -286,15 +333,15 @@ jobs:
       - name: Verify API health
         if: >-
           needs.deploy-api.result == 'success' &&
-          vars.PRODUCTION_API_URL != ''
+          vars.DOMAIN_NAME != ''
         run: |
           curl --fail --silent --show-error \
-            "${{ vars.PRODUCTION_API_URL }}/health"
+            "https://api.${{ vars.DOMAIN_NAME }}/health"
 
       - name: Verify frontend reachable
         if: >-
           needs.deploy-client.result == 'success' &&
-          vars.PRODUCTION_CLIENT_URL != ''
+          vars.DOMAIN_NAME != ''
         run: |
           curl --fail --silent --show-error \
-            "${{ vars.PRODUCTION_CLIENT_URL }}"
+            "https://${{ vars.DOMAIN_NAME }}"

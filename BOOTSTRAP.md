@@ -13,7 +13,7 @@ After creating these resources, tag them in **Resource Groups → Tag Editor** (
 | `Environment` | `prod` |
 | `ManagedBy` | `manual` |
 
-Apply to: S3 bucket `autobody-tfstate-prod`, DynamoDB table `autobody-tfstate-lock`, and secret `prod/supabase/database_url` (bootstrap-only; not in Terraform state).
+Apply to: S3 bucket `autobody-tfstate-prod` and DynamoDB table `autobody-tfstate-lock`.
 
 ```bash
 # One line per command — avoids broken line continuations when copying from the doc.
@@ -41,6 +41,12 @@ aws iam create-open-id-connect-provider \
 
 ## 3. Create the deploy role (first local apply)
 
+**Terraform >= 1.9** is required (`infra/terraform/backend.tf`). Check with `terraform version`.
+
+- Homebrew: `brew upgrade terraform` (if upgrade fails, fix Cellar ownership per Homebrew's hint, then retry).
+- [tfenv](https://github.com/tfutils/tfenv): `cd infra/terraform && tfenv install` (uses `.terraform-version`, currently **1.9.8**).
+- Or download from [releases.hashicorp.com/terraform](https://releases.hashicorp.com/terraform/).
+
 ```bash
 cd infra/terraform
 terraform init
@@ -53,42 +59,115 @@ Copy the printed role ARN into GitHub.
 
 Restrict the environment to the `main` branch.
 
+**All app secrets live here.** Terraform distributes them to the correct runtime — Lambdas or Vercel — without any intermediate store.
+
 | Secret | Value |
 |--------|-------|
 | `AWS_DEPLOY_ROLE_ARN` | ARN from step 3 |
 | `VERCEL_TOKEN` | Vercel personal access token |
-| `VERCEL_ORG_ID` | Your Vercel team/org ID |
-| `VERCEL_PROJECT_ID_API` | Vercel project ID for `apps/api` |
-| `VERCEL_PROJECT_ID_CLIENT` | Vercel project ID for `apps/client` |
-| `SUPABASE_MIGRATION_URL` | Supabase direct-connection URL with service-role creds |
+| `DATABASE_URL` | Supabase connection string for Vercel API and listing Lambdas (pooler or session/direct — see below) |
+| `SUPABASE_MIGRATION_URL` | (Optional) Supabase URL for CI `drizzle-kit migrate` — if unset, deploy uses `DATABASE_URL` |
+| `EBAY_API_KEY` | eBay developer app client ID |
+| `EBAY_API_SECRET` | eBay developer app client secret |
+| `EBAY_USER_REFRESH_TOKEN` | eBay user refresh token for Trading API |
+| `EBAY_RU_NAME` | (Optional) eBay RuName for user OAuth |
+| `EBAY_EPN_CAMPID` | (Optional) Affiliate link campaign ID — Vercel API only; US/CA MKRIDs are built into the API |
 
-## 5. AWS Secrets Manager — Supabase connection string
+> eBay Partner Network MKRIDs for `ebay.com` and `ebay.ca` are hardcoded in the affiliate package (not env vars).
+
+> **`EBAY_API_URL` is not a production secret.** The listing workers default to `https://api.ebay.com` when the variable is unset. Set it in your local `.env` only when you need the sandbox endpoint.
+
+**Repository or environment variables** (Settings → Actions → Variables, not encrypted):
+
+| Variable | Value |
+|----------|-------|
+| `DOMAIN_NAME` | `getboneyard.com` (apex only, no `https://`) |
+| `VERCEL_ORG_ID` | Vercel team ID — **must be the team that owns `getboneyard.com`** (Settings → General → Team ID, or from the dashboard URL) |
+
+Deploy health checks use `https://api.<DOMAIN_NAME>/health` and `https://<DOMAIN_NAME>` automatically.
+
+### Supabase URLs (`DATABASE_URL` vs `SUPABASE_MIGRATION_URL`)
+
+You do not need a separate local env var for migrations unless you want one.
+
+In **Supabase** → **Project Settings** → **Database** → **Connection string**:
+
+| Mode | Typical host | Use |
+|------|----------------|-----|
+| **Session** or **Direct** | `db.<ref>.supabase.co:5432` | Drizzle migrations, long-lived connections |
+| **Transaction pooler** | `aws-0-…pooler.supabase.com:6543` | Serverless (Vercel, Lambda) at scale |
+
+- Set GitHub secret **`DATABASE_URL`** to the string your app uses in production (often the **pooler** for Vercel/Lambda).
+- Set **`SUPABASE_MIGRATION_URL`** only if migrations need a **different** string (usually **Session/Direct** on port 5432). If you only have one connection string (e.g. the same `postgresql://…@db.….supabase.co:5432/…` you use in `.env`), set **`DATABASE_URL` only** — the migrate job falls back to it.
+
+## 5. Vercel — projects, domains, and env vars (Terraform)
+
+Vercel **projects**, **custom domains**, and **production env vars** are managed in `infra/terraform/vercel.tf`. Application **code** is still deployed by GitHub Actions (`vercel build` / `vercel deploy`).
+
+The domain `getboneyard.com` was purchased in Vercel, so DNS is managed by Vercel — no external registrar step. Terraform attaches the hostnames to the correct projects:
+
+| Host | Project |
+|------|---------|
+| `getboneyard.com` | `autobody-part-sourcing-client` |
+| `www.getboneyard.com` | `autobody-part-sourcing-client` |
+| `api.getboneyard.com` | `autobody-part-sourcing-api` |
+
+`NEXT_PUBLIC_API_BASE_URL` is derived automatically as `https://api.getboneyard.com` once `DOMAIN_NAME` is set.
+
+### Local Terraform apply
+
+Export the same keys that GitHub passes as `TF_VAR_*`:
 
 ```bash
-aws secretsmanager create-secret \
-  --name prod/supabase/database_url \
-  --secret-string "postgresql://..." \
-  --region us-west-2
+cd infra/terraform
+export TF_VAR_vercel_api_token="..."           # same as VERCEL_TOKEN
+export TF_VAR_vercel_team_id="..."             # same as VERCEL_ORG_ID variable
+export TF_VAR_domain_name="getboneyard.com"
+export TF_VAR_database_url="postgresql://..."
+export TF_VAR_ebay_api_key="..."
+export TF_VAR_ebay_api_secret="..."
+export TF_VAR_ebay_user_refresh_token="..."
+export TF_VAR_ebay_ru_name="..."               # optional
+terraform apply
 ```
 
-## 6. Vercel env vars for `apps/api` (SQS doorbell)
-
-After `terraform apply` completes, copy:
-
-- `OUTBOX_QUEUE_URL` — from `terraform output outbox_queue_url`
-- `AWS_REGION` = `us-west-2`
-- `AWS_ACCESS_KEY_ID` — from `terraform output api_publisher_access_key_id`
-- `AWS_SECRET_ACCESS_KEY` — create the IAM access key manually:
+**Import an existing API project** (if you already ran `vercel link` in `apps/api`):
 
 ```bash
-aws iam create-access-key --user-name vercel-api-outbox-publisher
+terraform import vercel_project.api prj_XXXX
 ```
 
-Set all four as **Encrypted** environment variables on the Vercel `apps/api` production project.
+**Import existing domain attachments** (if already linked in the Vercel dashboard):
 
-## 7. Branch protection on `main`
+```bash
+terraform import 'vercel_project_domain.client[0]' getboneyard.com
+terraform import 'vercel_project_domain.client_www[0]' www.getboneyard.com
+terraform import 'vercel_project_domain.api[0]' api.getboneyard.com
+```
+
+### First-time migration (existing AWS accounts with old Secrets Manager secrets)
+
+1. Confirm `DATABASE_URL` in GitHub matches what listing Lambdas need (compare with `prod/supabase/database_url` if they diverged).
+2. Run `terraform apply` with the new code — Lambdas pick up env vars from `TF_VAR_*` instead of Secrets Manager.
+3. After confirming Lambdas and Vercel API connect, delete the orphaned secrets:
+
+```bash
+aws secretsmanager delete-secret --secret-id prod/ebay/api --force-delete-without-recovery --region us-west-2
+aws secretsmanager delete-secret --secret-id prod/supabase/database_url --force-delete-without-recovery --region us-west-2
+```
+
+Also remove any orphaned `OUTBOX_QUEUE_URL` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` env vars from the Vercel API project in the dashboard (payment outbox infra was removed).
+
+## 6. Branch protection on `main`
 
 In GitHub → Settings → Branches → Add rule for `main`:
-- Require status checks: `validate`
+- Require status checks: `App Validation` and `live-tests`
 - Require at least 1 approving review
 - Block force pushes
+
+## 7. Tests
+
+- `npm test` — unit tests (stubbed env, no network). Runs on every push/PR.
+- `npm run test:live` — integration smoke tests against real eBay + Supabase. Requires credentials in `.env` locally (`LIVE_TESTS=1` is set automatically by the script). Runs automatically on `main` push in CI via the `live-tests` job.
+
+**Secret rotation note:** changing a GitHub secret does not automatically trigger a redeploy. To push rotated credentials to Lambdas or Vercel, touch any file in `infra/` and push to `main`, or re-run the relevant deploy job manually.
