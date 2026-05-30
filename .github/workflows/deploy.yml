@@ -185,7 +185,7 @@ jobs:
       - run: npm ci --workspaces --include-workspace-root
 
       - name: Run migrations
-        run: npx drizzle-kit migrate
+        run: npx tsx scripts/migrate.ts
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_MIGRATION_URL || secrets.DATABASE_URL }}
 

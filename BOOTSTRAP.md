@@ -66,7 +66,7 @@ Restrict the environment to the `main` branch.
 | `AWS_DEPLOY_ROLE_ARN` | ARN from step 3 |
 | `VERCEL_TOKEN` | Vercel personal access token |
 | `DATABASE_URL` | Supabase connection string for Vercel API and listing Lambdas (pooler or session/direct — see below) |
-| `SUPABASE_MIGRATION_URL` | (Optional) Supabase URL for CI `drizzle-kit migrate` — if unset, deploy uses `DATABASE_URL` |
+| `SUPABASE_MIGRATION_URL` | (Optional) Supabase URL for CI `npm run db:migrate` — if unset, deploy uses `DATABASE_URL` |
 | `EBAY_API_KEY` | eBay developer app client ID |
 | `EBAY_API_SECRET` | eBay developer app client secret |
 | `EBAY_USER_REFRESH_TOKEN` | eBay user refresh token for Trading API |

@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "setup": "npx drizzle-kit push && npm run seed",
+    "db:migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
     "dev": "npm run dev -w apps/api & npm run dev -w apps/client",
     "ingest": "npm run dev -w apps/workers/listingWorker",
