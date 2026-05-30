@@ -126,6 +126,38 @@ jobs:
 
       - run: terraform init
 
+      # Projects created via `vercel link` before Terraform managed them — import by name once.
+      - name: Import existing Vercel projects
+        if: >-
+          needs.changes.outputs.infra == 'true' ||
+          needs.changes.outputs.deploy_api == 'true' ||
+          needs.changes.outputs.deploy_client == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          APP="${TF_VAR_application:-autobody-part-sourcing}"
+          TEAM="${{ vars.VERCEL_ORG_ID }}"
+          import_if_missing() {
+            local resource="$1" name="$2"
+            if terraform state show "$resource" >/dev/null 2>&1; then
+              echo "$resource already in state"
+              return 0
+            fi
+            local url="https://api.vercel.com/v9/projects/${name}"
+            [ -n "$TEAM" ] && url="${url}?teamId=${TEAM}"
+            local id
+            id=$(curl -sf -H "Authorization: Bearer ${VERCEL_TOKEN}" "$url" | jq -r '.id // empty') || true
+            if [ -z "$id" ]; then
+              echo "Project ${name} not in Vercel — Terraform will create it"
+              return 0
+            fi
+            echo "Importing ${resource} (${id})"
+            terraform import "$resource" "$id"
+          }
+          import_if_missing vercel_project.api "${APP}-api"
+          import_if_missing vercel_project.client "${APP}-client"
+
       - name: Terraform apply
         if: needs.changes.outputs.infra == 'true'
         run: terraform apply -auto-approve

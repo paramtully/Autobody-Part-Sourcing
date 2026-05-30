@@ -2,7 +2,8 @@ data "aws_caller_identity" "current" {}
 
 # ── listingWorker execution role ──────────────────────────────────────────────
 resource "aws_iam_role" "listing_exec" {
-  name = "listing-worker-exec"
+  provider = aws.iam
+  name     = "listing-worker-exec"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -15,7 +16,8 @@ resource "aws_iam_role" "listing_exec" {
 }
 
 resource "aws_iam_role_policy" "listing_exec" {
-  name = "listing-worker-exec-policy"
+  provider = aws.iam
+  name     = "listing-worker-exec-policy"
   role = aws_iam_role.listing_exec.id
 
   policy = jsonencode({

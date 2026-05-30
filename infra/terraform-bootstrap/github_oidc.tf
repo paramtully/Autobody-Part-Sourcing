@@ -70,6 +70,7 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Action = ["iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:DeleteRole",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PutRolePolicy",
           "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
+          "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy",
         ]
         Resource = "*"
       },
