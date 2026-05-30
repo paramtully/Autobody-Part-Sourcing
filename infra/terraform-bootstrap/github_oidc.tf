@@ -1,6 +1,5 @@
 # GitHub OIDC provider is created during bootstrap (BOOTSTRAP.md step 2). Its ARN is
-# deterministic per account — construct it instead of a data lookup so CI roles need not
-# grant iam:ListOpenIDConnectProviders.
+# deterministic per account — no iam:ListOpenIDConnectProviders lookup needed.
 locals {
   github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
@@ -8,6 +7,9 @@ locals {
 # Role assumed by GitHub Actions via OIDC — no long-lived keys ever stored.
 # Deploy runs on workflow_run with environment: production → sub is :environment:production,
 # not :ref:refs/heads/main (that claim is for workflows triggered directly by push).
+#
+# Managed only from this bootstrap root module (admin credentials). CI applies infra/terraform
+# using this role and must not manage the role itself — that creates refresh permission loops.
 resource "aws_iam_role" "gh_deploy" {
   name = "gh-actions-deploy"
 

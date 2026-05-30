@@ -41,25 +41,25 @@ aws iam create-open-id-connect-provider \
 
 ## 3. Create the deploy role (first local apply)
 
-The role trust policy must allow `repo:<owner>/<repo>:environment:production` because **Deploy** runs via `workflow_run` with the `production` environment (OIDC `sub` is not `ref:refs/heads/main`). If `configure-aws-credentials` fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, re-apply the role after updating `github_oidc.tf`:
+The deploy role lives in **`infra/terraform-bootstrap/`** (local state, admin credentials). CI applies `infra/terraform/` *using* this role and must not manage it — otherwise Terraform refresh needs IAM read permissions the role intentionally omits.
 
-```bash
-terraform apply -target=aws_iam_role.gh_deploy
-```
+The role trust policy must allow `repo:<owner>/<repo>:environment:production` because **Deploy** runs via `workflow_run` with the `production` environment (OIDC `sub` is not `ref:refs/heads/main`). If `configure-aws-credentials` fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, re-apply from bootstrap after updating `github_oidc.tf`:
 
-**Terraform >= 1.9** is required (`infra/terraform/backend.tf`). Check with `terraform version`.
+**Terraform >= 1.9** is required. Check with `terraform version`.
 
 - Homebrew: `brew upgrade terraform` (if upgrade fails, fix Cellar ownership per Homebrew's hint, then retry).
-- [tfenv](https://github.com/tfutils/tfenv): `cd infra/terraform && tfenv install` (uses `.terraform-version`, currently **1.9.8**).
+- [tfenv](https://github.com/tfutils/tfenv): `cd infra/terraform-bootstrap && tfenv install` (uses `.terraform-version`, currently **1.9.8**).
 - Or download from [releases.hashicorp.com/terraform](https://releases.hashicorp.com/terraform/).
 
 ```bash
-cd infra/terraform
+cd infra/terraform-bootstrap
 terraform init
-terraform apply -target=aws_iam_role.gh_deploy -target=aws_iam_role_policy.gh_deploy
+terraform apply \
+  -var="github_owner=<your-github-owner>" \
+  -var="github_repo=Autobody-Part-Sourcing"
 ```
 
-Copy the printed role ARN into GitHub.
+Copy the printed `gh_deploy_role_arn` into GitHub.
 
 ## 4. GitHub Secrets — add under a `production` Environment (Settings → Environments)
 
