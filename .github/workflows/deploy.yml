@@ -36,7 +36,7 @@ jobs:
       deploy_client: ${{ steps.filter.outputs.deploy_client }}
       deploy_listing_lambda: ${{ steps.filter.outputs.deploy_listing_lambda }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
@@ -103,7 +103,7 @@ jobs:
       vercel_api_project_id: ${{ steps.tf.outputs.vercel_api_project_id }}
       vercel_client_project_id: ${{ steps.tf.outputs.vercel_client_project_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -165,7 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -241,7 +241,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -286,7 +286,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
