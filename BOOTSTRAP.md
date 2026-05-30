@@ -41,6 +41,12 @@ aws iam create-open-id-connect-provider \
 
 ## 3. Create the deploy role (first local apply)
 
+The role trust policy must allow `repo:<owner>/<repo>:environment:production` because **Deploy** runs via `workflow_run` with the `production` environment (OIDC `sub` is not `ref:refs/heads/main`). If `configure-aws-credentials` fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, re-apply the role after updating `github_oidc.tf`:
+
+```bash
+terraform apply -target=aws_iam_role.gh_deploy
+```
+
 **Terraform >= 1.9** is required (`infra/terraform/backend.tf`). Check with `terraform version`.
 
 - Homebrew: `brew upgrade terraform` (if upgrade fails, fix Cellar ownership per Homebrew's hint, then retry).

@@ -25,6 +25,12 @@ variable "github_repo" {
   description = "GitHub repo name without the owner prefix (e.g. Autobody-Part-Sourcing)"
 }
 
+variable "github_actions_environment" {
+  type        = string
+  description = "GitHub Actions environment name used on deploy jobs (OIDC sub claim)"
+  default     = "production"
+}
+
 variable "vendors" {
   type = map(object({
     interval_ms         = number

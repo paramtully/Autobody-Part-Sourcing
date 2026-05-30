@@ -9,10 +9,13 @@
 import 'dotenv/config';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 
-const MIGRATIONS_FOLDER = 'src/db/migrations';
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const MIGRATIONS_FOLDER = join(REPO_ROOT, 'src/db/migrations');
 const BASELINE_TAG = '0000_absent_gorilla_man';
 
 /** Drizzle applies migrations with `created_at` > last row; fix push-era baselines. */
@@ -79,7 +82,7 @@ async function main(): Promise<void> {
     await sql.end();
   }
 
-  execSync('npx drizzle-kit migrate', { stdio: 'inherit', env: process.env });
+  execSync('npx drizzle-kit migrate', { stdio: 'inherit', env: process.env, cwd: REPO_ROOT });
 }
 
 main().catch((err: unknown) => {

@@ -4,7 +4,8 @@ data "aws_iam_openid_connect_provider" "github" {
 }
 
 # Role assumed by GitHub Actions via OIDC — no long-lived keys ever stored.
-# Trust policy is pinned to this repo + main branch so forks cannot assume it.
+# Deploy runs on workflow_run with environment: production → sub is :environment:production,
+# not :ref:refs/heads/main (that claim is for workflows triggered directly by push).
 resource "aws_iam_role" "gh_deploy" {
   name = "gh-actions-deploy"
 
@@ -19,7 +20,10 @@ resource "aws_iam_role" "gh_deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_owner}/${var.github_repo}:environment:${var.github_actions_environment}",
+            "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/main",
+          ]
         }
       }
     }]
