@@ -1,6 +1,8 @@
-# Looks up the GitHub OIDC provider that was created during bootstrap (BOOTSTRAP.md step 2).
-data "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
+# GitHub OIDC provider is created during bootstrap (BOOTSTRAP.md step 2). Its ARN is
+# deterministic per account — construct it instead of a data lookup so CI roles need not
+# grant iam:ListOpenIDConnectProviders.
+locals {
+  github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
 
 # Role assumed by GitHub Actions via OIDC — no long-lived keys ever stored.
@@ -13,7 +15,7 @@ resource "aws_iam_role" "gh_deploy" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
