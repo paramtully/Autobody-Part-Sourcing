@@ -94,11 +94,14 @@ In **Supabase** → **Project Settings** → **Database** → **Connection strin
 
 | Mode | Typical host | Use |
 |------|----------------|-----|
-| **Session** or **Direct** | `db.<ref>.supabase.co:5432` | Drizzle migrations, long-lived connections |
+| **Session pooler** | `aws-0-…pooler.supabase.com:5432` | CI live tests, migrations, IPv4-only hosts |
 | **Transaction pooler** | `aws-0-…pooler.supabase.com:6543` | Serverless (Vercel, Lambda) at scale |
+| **Direct** | `db.<ref>.supabase.co:5432` | IPv6 networks only — **not** GitHub Actions |
 
-- Set GitHub secret **`DATABASE_URL`** to the string your app uses in production (often the **pooler** for Vercel/Lambda).
-- Set **`SUPABASE_MIGRATION_URL`** only if migrations need a **different** string (usually **Session/Direct** on port 5432). If you only have one connection string (e.g. the same `postgresql://…@db.….supabase.co:5432/…` you use in `.env`), set **`DATABASE_URL` only** — the migrate job falls back to it.
+Supabase **direct** URLs resolve to IPv6 only. GitHub Actions runners are IPv4-only, so CI DB smoke tests fail with `connect ENETUNREACH 2600:…:5432` when `DATABASE_URL` points at `db.<ref>.supabase.co`.
+
+- Set GitHub secret **`DATABASE_URL`** to a **Supavisor pooler** URL (session or transaction mode). This is what Vercel, Lambda, and CI need.
+- Set **`SUPABASE_MIGRATION_URL`** only if migrations need a **different** pooler string (e.g. session pooler on `:5432` while runtime uses transaction pooler on `:6543`). If one pooler URL works for both, set **`DATABASE_URL` only** — the migrate job falls back to it.
 
 ## 5. Vercel — projects, domains, and env vars (Terraform)
 

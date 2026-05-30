@@ -16,7 +16,21 @@ import { vendors } from './models/vendors';
 
 const live = process.env['LIVE_TESTS'] === '1' ? describe : describe.skip;
 
+/** Supabase direct host — IPv6-only; fails on GitHub Actions and other IPv4-only networks. */
+function isSupabaseDirectUrl(url: string): boolean {
+    return /@db\.[^./]+\.supabase\.co/.test(url);
+}
+
 live('DB live smoke', () => {
+    beforeAll(() => {
+        const url = process.env['DATABASE_URL'] ?? '';
+        if (url && isSupabaseDirectUrl(url)) {
+            throw new Error(
+                'DATABASE_URL uses Supabase direct connection (db.<ref>.supabase.co), which is IPv6-only. ' +
+                    'Use a Supavisor pooler URL from Supabase Dashboard → Connect (session or transaction pooler).',
+            );
+        }
+    });
     it('responds to SELECT 1', async () => {
         const result = await db.execute(sql`SELECT 1 AS ok`);
         expect(result[0]).toMatchObject({ ok: 1 });

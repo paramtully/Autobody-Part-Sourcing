@@ -14,9 +14,9 @@ jobs:
     name: App Validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -48,15 +48,26 @@ jobs:
     env:
       LIVE_TESTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
         run: npm ci --workspaces --include-workspace-root
+
+      # Supabase direct URLs (db.*.supabase.co) resolve to IPv6 only; GitHub Actions is IPv4-only.
+      - name: Validate DATABASE_URL is IPv4-compatible
+        run: |
+          if echo "$DATABASE_URL" | grep -qE '@db\.[^./]+\.supabase\.co'; then
+            echo "::error::DATABASE_URL uses Supabase direct connection (db.<ref>.supabase.co), which is IPv6-only and unreachable from GitHub Actions."
+            echo "Set the production environment secret to a Supavisor pooler URL (Supabase Dashboard → Connect → Session or Transaction pooler)."
+            exit 1
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Run live integration tests
         run: npm run test:live
@@ -84,14 +95,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Terraform CLI
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.9.8
 
       - name: Check terraform formatting
         run: terraform fmt -check
+
+      - name: Initialize Terraform providers
+        run: terraform init -backend=false
 
       - run: terraform validate
