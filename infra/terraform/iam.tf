@@ -18,7 +18,7 @@ resource "aws_iam_role" "listing_exec" {
 resource "aws_iam_role_policy" "listing_exec" {
   provider = aws.iam
   name     = "listing-worker-exec-policy"
-  role = aws_iam_role.listing_exec.id
+  role     = aws_iam_role.listing_exec.id
 
   policy = jsonencode({
     Version = "2012-10-17"
