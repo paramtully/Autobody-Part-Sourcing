@@ -42,10 +42,15 @@ live('DB live smoke', () => {
         expect(rows.length).toBeGreaterThan(0);
     });
 
-    it('vendors table contains the expected ebay vendor', async () => {
-        const { eq } = await import('drizzle-orm');
-        const rows = await db.select().from(vendors).where(eq(vendors.id, 'ebay'));
-        expect(rows.length).toBe(1);
-        expect(rows[0]!.name).toBeTruthy();
+    it('vendors table contains the expected ebay vendors', async () => {
+        const { inArray } = await import('drizzle-orm');
+        const rows = await db
+            .select()
+            .from(vendors)
+            .where(inArray(vendors.id, ['ebay-us', 'ebay-ca']));
+        expect(rows.length).toBe(2);
+        for (const row of rows) {
+            expect(row.name).toBe('eBay');
+        }
     });
 });

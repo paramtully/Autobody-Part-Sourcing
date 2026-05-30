@@ -1,9 +1,14 @@
 // Stub environment variables before any module loads dotenv.
 // This file runs during Jest's setupFiles phase, before test imports.
-// When LIVE_TESTS=1, skip stubbing so real .env values are used for all services.
+// When LIVE_TESTS=1, load .env first — @repo/db/client throws if DATABASE_URL is unset
+// and many modules import @repo/db before their own dotenv.config() runs.
+import { config as loadEnv } from 'dotenv';
+
 const live = process.env['LIVE_TESTS'] === '1';
 
-if (!live) {
+if (live) {
+    loadEnv();
+} else {
     process.env['DATABASE_URL'] = 'memory://test';
     process.env['EBAY_API_KEY'] = 'test-ebay-key';
     process.env['EBAY_API_SECRET'] = 'test-ebay-secret';
