@@ -1,11 +1,13 @@
 import express, { type Request, type Response } from 'express';
 import { db, vendors } from '@repo/db';
 import { asc } from 'drizzle-orm';
+import { setStaticCacheHeaders } from '../lib/cacheHeaders.js';
 
 const router = express.Router();
 
 // GET /vendors — returns all active vendors for filter dropdowns and vendor panels
 router.get('/', (_req: Request, res: Response) => {
+    setStaticCacheHeaders(res);
     db.select({
         id: vendors.id,
         name: vendors.name,

@@ -30,11 +30,13 @@ function decorateAffiliate<T extends { vendorId: string; sourceUrl: string | nul
 
 const router = express.Router();
 const PAGE_SIZE = 50;
+export const MAX_PAGES = 20;
 
 // ── Shared filter/sort schema (applied to both search endpoints) ──────────────
 
 const listingQuerySchema = z.object({
-    cursor: z.coerce.number().int().optional(),
+    cursor: z.string().uuid().optional(),
+    page: z.coerce.number().int().min(1).max(MAX_PAGES).default(1),
     sort: z.enum(['price_asc', 'price_desc', 'eta_asc', 'reliability_desc', 'best_match']).optional(),
     partType: z.enum(partIdentifierTypeEnum.enumValues).optional(),
     condition: z.string().optional(),   // comma-separated PartCondition values
@@ -91,11 +93,11 @@ const listingParams = {
 
 function buildFilterPredicates(
     query: z.infer<typeof listingQuerySchema>,
-    cursor: number | undefined,
+    cursor: string | undefined,
 ) {
     const predicates: (ReturnType<typeof eq> | undefined)[] = [];
 
-    if (cursor) predicates.push(gt(listings.id, cursor.toString()));
+    if (cursor) predicates.push(gt(listings.id, cursor));
 
     if (query.partType) predicates.push(eq(partIdentifiers.type, query.partType));
 
@@ -142,6 +144,17 @@ function buildOrderBy(sort: z.infer<typeof listingQuerySchema>['sort']) {
     }
 }
 
+function sendListingsPage(res: Response, rows: any[], page: number) {
+    const decorated = decorateAffiliate(rows);
+    const hasMore = rows.length === PAGE_SIZE && page < MAX_PAGES;
+    return res.status(200).json({
+        listings: decorated,
+        hasMore,
+        page,
+        cursor: rows.length ? rows[rows.length - 1]!.id : null,
+    });
+}
+
 // ── GET /listings/by-fitment ──────────────────────────────────────────────────
 
 router.get('/by-fitment', (req: Request, res: Response) => {
@@ -157,7 +170,7 @@ router.get('/by-fitment', (req: Request, res: Response) => {
     }
 
     const { make, model, year, category, position, constraint } = fitment.data;
-    const { cursor } = query.data;
+    const { cursor, page } = query.data;
     const filterPredicates = buildFilterPredicates(query.data, cursor);
     const orderBy = buildOrderBy(query.data.sort);
 
@@ -189,13 +202,8 @@ router.get('/by-fitment', (req: Request, res: Response) => {
         ))
         .orderBy(listings.id, ...orderBy)
         .limit(PAGE_SIZE)
-        .then((rows: any[]) => {
-            return res.status(200).json({
-                listings: decorateAffiliate(rows),
-                hasMore: rows.length === PAGE_SIZE,
-                cursor: rows.length ? rows[rows.length - 1].id : null,
-            });
-        }).catch((err: Error) => {
+        .then((rows: any[]) => sendListingsPage(res, rows, page))
+        .catch((err: Error) => {
             console.error('Listing search failed:', err);
             return res.status(500).json({ error: 'Error: ' + err.message });
         });
@@ -212,7 +220,7 @@ router.get('/by-part-number/:partNumber', async (req: Request, res: Response) =>
         return res.status(400).json({ error: 'Invalid query params', details: query.error.flatten() });
     }
 
-    const { cursor } = query.data;
+    const { cursor, page } = query.data;
     const filterPredicates = buildFilterPredicates(query.data, cursor);
     const orderBy = buildOrderBy(query.data.sort);
 
@@ -236,12 +244,7 @@ router.get('/by-part-number/:partNumber', async (req: Request, res: Response) =>
             .orderBy(...orderBy)
             .limit(PAGE_SIZE);
 
-        const lastResult = result[result.length - 1];
-        return res.status(200).json({
-            listings: decorateAffiliate(result),
-            hasMore: result.length === PAGE_SIZE,
-            cursor: lastResult?.id ?? null,
-        });
+        return sendListingsPage(res, result, page);
 
     } catch (err: unknown) {
         console.error('Listing search failed:', err);

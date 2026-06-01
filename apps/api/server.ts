@@ -4,25 +4,44 @@ import cors from 'cors';
 import listingsRouter from './routes/listings.js';
 import fitmentRouter from './routes/fitment.js';
 import vendorsRouter from './routes/vendors.js';
+import { corsOrigins, isOriginExemptPath, isProductionApi } from './lib/allowedOrigins.js';
 // import checkoutRouter from './routes/checkout.js';
 // import paymentWebhookRouter from './routes/paymentWebhook.js';
 
 const app = express();
 const PORT = process.env['PORT'] ?? 5050;
 
-function corsOrigins(): string[] {
-    const origins = ['http://localhost:3000'];
-    const domain = process.env['DOMAIN_NAME']?.trim();
-    if (domain) {
-        origins.push(`https://${domain}`, `https://www.${domain}`);
+app.use((req, res, next) => {
+    if (!isProductionApi() || isOriginExemptPath(req.path)) {
+        next();
+        return;
     }
-    return origins;
-}
+    const origin = req.headers.origin;
+    if (!origin || !corsOrigins().includes(origin)) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+    }
+    next();
+});
 
 app.use(
     cors({
         origin(origin, callback) {
-            if (!origin || corsOrigins().includes(origin)) {
+            if (!isProductionApi()) {
+                if (!origin || corsOrigins().includes(origin)) {
+                    callback(null, true);
+                    return;
+                }
+                callback(null, false);
+                return;
+            }
+            // Non-CORS requests have no Origin; the Origin gate middleware already
+            // returns 403 on protected paths before we reach route handlers.
+            if (!origin) {
+                callback(null, true);
+                return;
+            }
+            if (corsOrigins().includes(origin)) {
                 callback(null, true);
                 return;
             }

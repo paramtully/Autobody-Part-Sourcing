@@ -11,7 +11,10 @@ function createDb(): DrizzleDb {
     if (!connectionString) {
         throw new Error('DATABASE_URL environment variable is required');
     }
-    return drizzle(postgres(connectionString), { schema });
+    const sql = process.env.VERCEL
+        ? postgres(connectionString, { max: 1, idle_timeout: 20, connect_timeout: 10 })
+        : postgres(connectionString);
+    return drizzle(sql, { schema });
 }
 
 function getDb(): DrizzleDb {

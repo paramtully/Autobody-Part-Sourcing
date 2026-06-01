@@ -78,6 +78,7 @@ export interface ListingDTO {
 export interface ListingsPage {
   listings: ListingDTO[];
   hasMore: boolean;
+  page: number;
   cursor: string | null;
 }
 

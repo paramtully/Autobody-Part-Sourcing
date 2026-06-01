@@ -50,6 +50,11 @@ describe('GET /fitment/categories', () => {
     expect(res.body.categories.length).toBeGreaterThan(0);
     expect(res.body.categories).toContain('BUMPER');
   });
+
+  it('sets edge cache headers on static metadata', async () => {
+    const res = await request(app).get('/fitment/categories');
+    expect(res.headers['cache-control']).toContain('s-maxage=3600');
+  });
 });
 
 describe('GET /fitment/positions', () => {

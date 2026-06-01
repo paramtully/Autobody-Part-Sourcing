@@ -1,11 +1,11 @@
 {
   "version": 2,
-  "installCommand": "cd ../.. && npm ci --workspaces --include-workspace-root",
   "builds": [
     {
       "src": "server.ts",
       "use": "@vercel/node",
       "config": {
+        "maxDuration": 30,
         "includeFiles": [
           "../../src/db/**",
           "../../src/ordering/**",

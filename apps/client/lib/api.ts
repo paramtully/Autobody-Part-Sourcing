@@ -9,16 +9,25 @@ import type {
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:5050';
 
+type ApiFetchOptions = { cache?: RequestCache };
+
 // ── Generic fetch helper ─────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
+async function apiFetch<T>(
+  path: string,
+  params?: Record<string, string | undefined>,
+  options?: ApiFetchOptions,
+): Promise<T> {
   const url = new URL(path, BASE);
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v != null && v !== '') url.searchParams.set(k, v);
     });
   }
-  const res = await fetch(url.toString(), { next: { revalidate: 0 } });
+  const res = await fetch(url.toString(), {
+    next: { revalidate: 0 },
+    cache: options?.cache,
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error ?? `API ${res.status}: ${path}`);
@@ -26,23 +35,32 @@ async function apiFetch<T>(path: string, params?: Record<string, string | undefi
   return res.json() as Promise<T>;
 }
 
+function metadataFetch<T>(path: string): Promise<T> {
+  return apiFetch<T>(path, undefined, { cache: 'force-cache' });
+}
+
 // ── Listings ─────────────────────────────────────────────────────────────────
 
 export async function fetchListingsByPartNumber(
-  params: PartNumberSearchParams & { cursor?: string },
+  params: PartNumberSearchParams & { cursor?: string; page?: number },
 ): Promise<ListingsPage> {
-  const { partNumber, cursor, ...filters } = params;
+  const { partNumber, cursor, page, ...filters } = params;
   return apiFetch<ListingsPage>(`/listings/by-part-number/${encodeURIComponent(partNumber)}`, {
     cursor,
+    page: page != null ? String(page) : undefined,
     ...filters,
   });
 }
 
 export async function fetchListingsByFitment(
-  params: FitmentSearchParams & { cursor?: string },
+  params: FitmentSearchParams & { cursor?: string; page?: number },
 ): Promise<ListingsPage> {
-  const { cursor, ...filters } = params;
-  return apiFetch<ListingsPage>('/listings/by-fitment', { cursor, ...filters });
+  const { cursor, page, ...filters } = params;
+  return apiFetch<ListingsPage>('/listings/by-fitment', {
+    cursor,
+    page: page != null ? String(page) : undefined,
+    ...filters,
+  });
 }
 
 export async function fetchListingImages(listingId: string): Promise<{ listingImages: ListingImage[] }> {
@@ -56,35 +74,27 @@ export async function fetchPartFitments(partId: string): Promise<{ fitments: Fit
 }
 
 export async function fetchMakesWithModels(): Promise<Record<string, string[]>> {
-  return apiFetch('/fitment/makes-with-models');
+  return metadataFetch('/fitment/makes-with-models');
 }
 
 export async function fetchYears(): Promise<{ years: { year: number }[] }> {
-  return apiFetch('/fitment/years');
+  return metadataFetch('/fitment/years');
 }
 
 export async function fetchCategories(): Promise<{ categories: string[] }> {
-  return apiFetch('/fitment/categories');
+  return metadataFetch('/fitment/categories');
 }
 
 export async function fetchPositions(): Promise<{ positions: string[] }> {
-  return apiFetch('/fitment/positions');
+  return metadataFetch('/fitment/positions');
 }
 
 export async function fetchConstraints(): Promise<{ constraints: string[] }> {
-  return apiFetch('/fitment/constraints');
+  return metadataFetch('/fitment/constraints');
 }
 
 // ── Vendors ──────────────────────────────────────────────────────────────────
 
 export async function fetchVendors(): Promise<{ vendors: VendorDTO[] }> {
-  return apiFetch('/vendors');
-}
-
-// ── VIN decode ────────────────────────────────────────────────────────────────
-
-export async function decodeVin(
-  vin: string,
-): Promise<{ year: number; make: string; model: string; trim: string | null }> {
-  return apiFetch(`/fitment/vin/${encodeURIComponent(vin)}`);
+  return metadataFetch('/vendors');
 }

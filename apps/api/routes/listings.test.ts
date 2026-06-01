@@ -124,7 +124,14 @@ describe('GET /listings/by-part-number/:partNumber', () => {
   it('edge — invalid cursor returns 400', async () => {
     const res = await request(app)
       .get('/listings/by-part-number/ABC123')
-      .query({ cursor: 'notanumber' });
+      .query({ cursor: 'not-a-valid-uuid' });
+    expect(res.status).toBe(400);
+  });
+
+  it('edge — page above MAX_PAGES returns 400', async () => {
+    const res = await request(app)
+      .get('/listings/by-part-number/ABC123')
+      .query({ page: '21' });
     expect(res.status).toBe(400);
   });
 });

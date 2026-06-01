@@ -10,10 +10,10 @@ locals {
 }
 
 resource "vercel_project" "api" {
-  name            = "${var.application}-api"
-  root_directory  = "apps/api"
-  node_version    = "20.x"
-  install_command = "cd ../.. && npm ci --workspaces --include-workspace-root"
+  name           = "${var.application}-api"
+  root_directory = "apps/api"
+  node_version   = "20.x"
+  # Install runs in CI (npm ci) before vercel build — avoid a second monorepo npm ci on Vercel.
 }
 
 resource "vercel_project" "client" {

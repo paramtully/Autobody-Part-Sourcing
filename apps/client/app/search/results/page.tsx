@@ -100,14 +100,26 @@ export default function ResultsPage() {
   } = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) => {
-      const base = { sort, condition: condition || undefined, vendorId: vendorId || undefined, availability, currency, cursor: pageParam as string | undefined };
+      const { page, cursor } = pageParam ?? { page: 1, cursor: undefined as string | undefined };
+      const base = {
+        sort,
+        condition: condition || undefined,
+        vendorId: vendorId || undefined,
+        availability,
+        currency,
+        page,
+        cursor,
+      };
       if (isFitment) {
         return fetchListingsByFitment({ make, model, year, category: category || undefined, position: position || undefined, constraint: constraint || undefined, ...base });
       }
       return fetchListingsByPartNumber({ partNumber, ...base });
     },
-    getNextPageParam: last => last.hasMore ? last.cursor ?? undefined : undefined,
-    initialPageParam: undefined as string | undefined,
+    getNextPageParam: last => {
+      if (!last.hasMore) return undefined;
+      return { page: (last.page ?? 1) + 1, cursor: last.cursor ?? undefined };
+    },
+    initialPageParam: { page: 1, cursor: undefined as string | undefined },
     enabled: isEnabled,
   });
 

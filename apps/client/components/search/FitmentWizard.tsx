@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Scan, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { fetchMakesWithModels, fetchYears, fetchCategories, fetchPositions, fetchConstraints, decodeVin } from '@/lib/api';
+import { fetchMakesWithModels, fetchYears, fetchCategories, fetchPositions, fetchConstraints } from '@/lib/api';
+import { decodeVin } from '@/lib/vin';
 import { useRecentSearches } from '@/lib/useRecentSearches';
 import { cn } from '@/lib/cn';
 

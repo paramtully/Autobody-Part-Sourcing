@@ -71,6 +71,7 @@ Restrict the environment to the `main` branch.
 |--------|-------|
 | `AWS_DEPLOY_ROLE_ARN` | ARN from step 3 |
 | `VERCEL_TOKEN` | Vercel personal access token |
+| `VERCEL_GIT_COMMIT_EMAIL` | **Primary email on your GitHub account** (GitHub → Settings → Emails), same one linked at [Vercel Authentication](https://vercel.com/account/settings/authentication). Not a school/noreply address — Vercel blocks deploys when the commit author email cannot be matched to GitHub (e.g. `ptully49@students.cs.ubc.ca`). |
 | `DATABASE_URL` | Supabase connection string for Vercel API and listing Lambdas (pooler or session/direct — see below) |
 | `SUPABASE_MIGRATION_URL` | (Optional) Supabase URL for CI `npm run db:migrate` — if unset, deploy uses `DATABASE_URL` |
 | `EBAY_API_KEY` | eBay developer app client ID |
@@ -89,6 +90,7 @@ Restrict the environment to the `main` branch.
 |----------|-------|
 | `DOMAIN_NAME` | `getboneyard.com` (apex only, no `https://`) |
 | `VERCEL_ORG_ID` | Vercel team ID — **must be the team that owns `getboneyard.com`** (Settings → General → Team ID, or from the dashboard URL) |
+| `VERCEL_GIT_COMMIT_NAME` | (Optional) Display name for deploy commits in CI — defaults to repo owner |
 
 Deploy health checks use `https://api.<DOMAIN_NAME>/health` and `https://<DOMAIN_NAME>` automatically.
 
@@ -122,6 +124,17 @@ The domain `getboneyard.com` was purchased in Vercel, so DNS is managed by Verce
 | `api.getboneyard.com` | `autobody-part-sourcing-api` |
 
 `NEXT_PUBLIC_API_BASE_URL` is derived automatically as `https://api.getboneyard.com` once `DOMAIN_NAME` is set.
+
+### Abuse protection and spend limits (no extra vendors)
+
+The API rejects requests without an allowed browser `Origin` in production (see `apps/api/server.ts`). That blocks naive `curl`/scanner traffic but not a determined attacker spoofing `Origin`.
+
+**Dashboard checklist (recommended):**
+
+| Provider | Action |
+|----------|--------|
+| **Vercel** | Team Settings → Billing → enable spend notifications and a spending limit if your plan supports it. |
+| **Supabase** | Confirm `DATABASE_URL` uses the **pooler** host (see table above); review connection limits for your tier under Database → Settings. |
 
 ### Local Terraform apply
 
