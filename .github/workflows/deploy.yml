@@ -46,12 +46,21 @@ jobs:
       - name: Attach CI commit to branch
         run: git checkout -B "${{ github.event.workflow_run.head_branch }}"
 
+      # Temporary bootstrap: diff from repo root → head_sha deploys everything changed
+      # since the first commit. Revert to parent-SHA vs head_sha after first deploy.
+      - name: Resolve root commit
+        id: root
+        run: |
+          HEAD_SHA='${{ github.event.workflow_run.head_sha }}'
+          echo "sha=$(git rev-list --max-parents=0 "$HEAD_SHA")" >> "$GITHUB_OUTPUT"
+      
+
       - name: Detect changed paths
         uses: dorny/paths-filter@v4
         id: filter
         with:
           base: ${{ github.event.workflow_run.head_branch }}
-          ref: ${{ github.event.workflow_run.head_branch }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           filters: |
             infra:
               - 'infra/**'
@@ -274,6 +283,7 @@ jobs:
       !cancelled() &&
       needs.changes.result == 'success' &&
       needs.terraform.result == 'success' &&
+      needs.changes.outputs.deploy_api == 'true' &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production
