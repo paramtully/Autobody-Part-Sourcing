@@ -9,8 +9,9 @@ resource "aws_lambda_function" "listing" {
   role                           = aws_iam_role.listing_exec.arn
   handler                        = "handler.handler"
   runtime                        = "nodejs20.x"
-  timeout                        = 720 # 12-min code budget (handler.ts line 24)
-  reserved_concurrent_executions = 1   # prevent overlapping runs per vendor
+  timeout = 720 # 12-min code budget (handler.ts line 24)
+  # No reserved_concurrent_executions: small accounts cannot reserve 1 per function
+  # (AWS requires ≥10 unreserved). Overlap is handled in handler via findInProgress + cooldown.
 
   filename = "${path.module}/placeholder.zip"
   lifecycle {
