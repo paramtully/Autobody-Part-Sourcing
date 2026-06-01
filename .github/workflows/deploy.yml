@@ -36,19 +36,22 @@ jobs:
       deploy_client: ${{ steps.filter.outputs.deploy_client }}
       deploy_listing_lambda: ${{ steps.filter.outputs.deploy_listing_lambda }}
     steps:
-      # paths-filter runs git merge-base between base and ref; shallow clones (depth 2)
-      # often lack the parent commit and fail with git exit 128.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      # paths-filter on detached HEAD + base/ref SHAs runs merge-base and fails (git 128).
+      # Same branch for base and ref diffs against the previous commit on that branch.
+      - name: Attach CI commit to branch
+        run: git checkout -B "${{ github.event.workflow_run.head_branch }}"
+
       - name: Detect changed paths
         uses: dorny/paths-filter@v4
         id: filter
         with:
-          base: HEAD^
-          ref: HEAD
+          base: ${{ github.event.workflow_run.head_branch }}
+          ref: ${{ github.event.workflow_run.head_branch }}
           filters: |
             infra:
               - 'infra/**'
