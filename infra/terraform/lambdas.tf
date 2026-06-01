@@ -5,11 +5,11 @@
 resource "aws_lambda_function" "listing" {
   for_each = var.vendors
 
-  function_name                  = "listing-worker-${each.key}"
-  role                           = aws_iam_role.listing_exec.arn
-  handler                        = "handler.handler"
-  runtime                        = "nodejs20.x"
-  timeout = 720 # 12-min code budget (handler.ts line 24)
+  function_name = "listing-worker-${each.key}"
+  role          = aws_iam_role.listing_exec.arn
+  handler       = "handler.handler"
+  runtime       = "nodejs20.x"
+  timeout       = 720 # 12-min code budget (handler.ts line 24)
   # No reserved_concurrent_executions: small accounts cannot reserve 1 per function
   # (AWS requires ≥10 unreserved). Overlap is handled in handler via findInProgress + cooldown.
 
