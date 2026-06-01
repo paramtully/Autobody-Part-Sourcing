@@ -20,6 +20,8 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
 
     // default to 180 minute ingestion interval, with 3 minute safety margin and 12 minute Lambda timeout
     const intervalMs = Number(process.env['INGEST_INTERVAL_MS'] ?? 180 * 60 * 1000);
+    // 24 hour cooldown period for rate limiting
+    const rateLimitPauseMs = Number(process.env['RATE_LIMIT_PAUSE_MS'] ?? 24 * 60 * 60 * 1000);
     const safetyMs = 3 * 60 * 1000;
     const runtimeMs = ctx?.getRemainingTimeInMillis?.() ?? Number(process.env['INGEST_TIMEOUT_MS'] ?? 12 * 60 * 1000);
     const deadlineAt = Date.now() + runtimeMs - safetyMs;
@@ -35,13 +37,25 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
     // create new run if no run is in progress and not on cooldown period
     if (!run) {
         const last = await repo.findLatest(vendorId);
-        if (last?.completedAt && Date.now() - last.completedAt.getTime() < intervalMs) {
+        if (last?.status === 'RATE_LIMITED' && last.lastChunkAt) {
+            const elapsed = Date.now() - last.lastChunkAt.getTime();
+            if (elapsed < rateLimitPauseMs) {
+                const remainMin = Math.ceil((rateLimitPauseMs - elapsed) / 60_000);
+                console.log(`[ingest] rate-limit pause — ${remainMin}m left (set RATE_LIMIT_PAUSE_MS to override)`);
+                return;
+            }
+            await repo.update(last.id, { status: 'IN_PROGRESS' });
+            run = { ...last, status: 'IN_PROGRESS' as const };
+            console.log(`[ingest] resuming rate-limited run ${run.id} for vendor '${vendorId}' from cursor ${run.lastCursor ?? 'start'}`);
+        } else if (last?.completedAt && Date.now() - last.completedAt.getTime() < intervalMs) {
             const cooldownRemainMin = Math.ceil((intervalMs - (Date.now() - last.completedAt.getTime())) / 60_000);
             console.log(`[ingest] skipping — last run completed at ${last.completedAt.toISOString()}, cooldown has ${cooldownRemainMin}m left (set INGEST_INTERVAL_MS=0 to disable)`);
             return;
         }
-        run = await repo.create(vendorId);
-        console.log(`[ingest] starting new run ${run.id} for vendor '${vendorId}'`);
+        if (!run) {
+            run = await repo.create(vendorId);
+            console.log(`[ingest] starting new run ${run.id} for vendor '${vendorId}'`);
+        }
     } else {
         console.log(`[ingest] resuming in-progress run ${run.id} for vendor '${vendorId}' from cursor ${run.lastCursor ?? 'start'}`);
     }
@@ -78,8 +92,13 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
         console.log(`[ingest] deadline reached — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
     } catch (e) {
         if (e instanceof VendorError && e.type === 'RATE_LIMIT') {
-            await repo.update(run.id, { lastChunkAt: new Date(), stats });
-            console.log(`[ingest] rate limited — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
+            await repo.update(run.id, {
+                status: 'RATE_LIMITED',
+                lastCursor: cursor ?? null,
+                lastChunkAt: new Date(),
+                stats,
+            });
+            console.log(`[ingest] rate limited — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume after RATE_LIMIT_PAUSE_MS`);
             return;
         }
         await repo.update(run.id, {

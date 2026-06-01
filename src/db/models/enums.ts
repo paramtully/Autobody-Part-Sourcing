@@ -230,5 +230,6 @@ export const ingestionRunStatusEnum = pgEnum('ingestion_run_status', [
     'COMPLETED',
     'FAILED',
     'CANCELLED',
+    'RATE_LIMITED',
 ]);
 

@@ -286,21 +286,6 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      # Vercel Hobby: commit author email must match GitHub account linked to Vercel (see BOOTSTRAP.md).
-      - name: Align git author for Vercel
-        env:
-          AUTHOR_EMAIL: ${{ secrets.VERCEL_GIT_COMMIT_EMAIL }}
-          AUTHOR_NAME: ${{ vars.VERCEL_GIT_COMMIT_NAME }}
-        run: |
-          set -euo pipefail
-          if [ -z "${AUTHOR_EMAIL}" ]; then
-            echo "::error::Set production secret VERCEL_GIT_COMMIT_EMAIL to the email on your GitHub account (Settings → Emails), linked at vercel.com/account/settings/authentication"
-            exit 1
-          fi
-          git config user.email "${AUTHOR_EMAIL}"
-          git config user.name "${AUTHOR_NAME:-${{ github.repository_owner }}}"
-          git commit --amend --no-edit --reset-author
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -350,20 +335,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-
-      - name: Align git author for Vercel
-        env:
-          AUTHOR_EMAIL: ${{ secrets.VERCEL_GIT_COMMIT_EMAIL }}
-          AUTHOR_NAME: ${{ vars.VERCEL_GIT_COMMIT_NAME }}
-        run: |
-          set -euo pipefail
-          if [ -z "${AUTHOR_EMAIL}" ]; then
-            echo "::error::Set production secret VERCEL_GIT_COMMIT_EMAIL to the email on your GitHub account (Settings → Emails), linked at vercel.com/account/settings/authentication"
-            exit 1
-          fi
-          git config user.email "${AUTHOR_EMAIL}"
-          git config user.name "${AUTHOR_NAME:-${{ github.repository_owner }}}"
-          git commit --amend --no-edit --reset-author
 
       - uses: actions/setup-node@v6
         with:

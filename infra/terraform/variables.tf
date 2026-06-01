@@ -38,9 +38,9 @@ variable "vendors" {
   }))
   description = "Map of vendor_id -> { interval_ms (cooldown), schedule_expression (EventBridge rate) }"
   default = {
-    # 96-hour (4 days) ingestion cadence; EventBridge wakes every 15 min to check cooldown
-    ebay-us = { interval_ms = 1000 * 60 * 60 * 96, schedule_expression = "rate(15 minutes)" }
-    ebay-ca = { interval_ms = 1000 * 60 * 60 * 96, schedule_expression = "rate(15 minutes)" }
+    # 168-hour (7 days) ingestion cadence; EventBridge wakes every 15 min to check cooldown
+    ebay-us = { interval_ms = 1000 * 60 * 60 * 168, schedule_expression = "rate(15 minutes)" }
+    ebay-ca = { interval_ms = 1000 * 60 * 60 * 168, schedule_expression = "rate(15 minutes)" }
   }
 }
 
