@@ -42,31 +42,29 @@ resource "aws_iam_role_policy" "gh_deploy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "LambdaDeploy"
+        Sid      = "LambdaRead"
+        Effect   = "Allow"
+        Action   = ["lambda:Get*", "lambda:List*"]
+        Resource = "*"
+      },
+      {
+        Sid    = "LambdaWrite"
         Effect = "Allow"
         Action = [
-          "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration",
-          "lambda:GetFunction",
-          "lambda:GetFunctionConfiguration",
-          "lambda:ListVersionsByFunction",
-          "lambda:ListAliases",
           "lambda:CreateFunction",
           "lambda:DeleteFunction",
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
           "lambda:AddPermission",
           "lambda:RemovePermission",
-          "lambda:GetPolicy",
           "lambda:CreateEventSourceMapping",
           "lambda:UpdateEventSourceMapping",
           "lambda:DeleteEventSourceMapping",
-          "lambda:GetEventSourceMapping",
-          "lambda:ListEventSourceMappings",
           "lambda:PublishVersion",
           "lambda:PutFunctionConcurrency",
-          "lambda:GetFunctionConcurrency",
           "lambda:DeleteFunctionConcurrency",
           "lambda:TagResource",
-          "lambda:ListTags",
+          "lambda:UntagResource",
         ]
         Resource = "*"
       },
@@ -75,7 +73,7 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Effect = "Allow"
         Action = ["iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:DeleteRole",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy", "iam:GetRolePolicy",           "iam:ListRolePolicies",
+          "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
           "iam:ListAttachedRolePolicies",
           "iam:ListInstanceProfilesForRole",
           "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy",
