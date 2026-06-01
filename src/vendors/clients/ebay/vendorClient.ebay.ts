@@ -60,7 +60,8 @@ function splitAspect(value: string | undefined): string[] {
 interface eBayVendorClientOptions {
     vendorId: string;       // e.g. 'ebay-us' | 'ebay-ca'
     marketplaceId: string;  // e.g. 'EBAY_US' | 'EBAY_CA'
-    tradingSiteId: string;  // '100' = US Motors, '2' = eBay CA
+    tradingSiteId: string;  // '100' = US Motors, '2' = eBay CA'
+    pageSize?: number;      // Browse search limit per page (max 200)
 }
 
 interface eBayConfig {
@@ -82,7 +83,7 @@ interface eBayConfig {
 
 export default class eBayVendorClient implements VendorInventoryClient {
     readonly vendorId: string;
-    private readonly DEFAULT_PAGE_SIZE = 200;
+    readonly pageSize: number;
     // Targeted body-panel sub-categories (eBay Motors category tree).
     // These drive precise inventory rather than the noisy 'auto body part' keyword search.
     // NOTE: reset any in-progress ingestion_runs rows before deploying — the offset cursor
@@ -101,6 +102,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
 
     constructor(opts: eBayVendorClientOptions) {
         this.vendorId = opts.vendorId;
+        this.pageSize = opts.pageSize ?? 200;
         this.config = {
             vendorId: opts.vendorId,
             apiKey: process.env.EBAY_API_KEY!,
@@ -334,7 +336,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         try {
             const params = new URLSearchParams({
                 category_ids: categoryId,
-                limit: this.DEFAULT_PAGE_SIZE.toString(),
+                limit: String(this.pageSize),
                 offset: String(offset),
             });
             const url: string = `${this.config.apiUrl}/buy/browse/v1/item_summary/search?${params}`;
@@ -365,7 +367,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
             throw new VendorError('INVALID_REQUEST', 'No data found in eBay response', this.config.retryAfterMs, new Error('No data found in eBay response'));
         }
 
-        const limit = Number(body.limit ?? this.DEFAULT_PAGE_SIZE);
+        const pageLimit = Number(body.limit ?? this.pageSize);
         const currentOffset = Number(body.offset ?? offset);
         const categoryHasMore: boolean = !!body.next;
 
@@ -374,7 +376,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
 
         if (categoryHasMore) {
             // More pages within the same category.
-            nextCursor = `${catIdx}:${currentOffset + limit}`;
+            nextCursor = `${catIdx}:${currentOffset + pageLimit}`;
             hasMore = true;
         } else {
             // Current category exhausted — advance to next category if one exists.

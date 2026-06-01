@@ -1,6 +1,6 @@
 import { db, IngestionRunRepo, VendorRepo } from '@repo/db';
 import type { IngestionStats } from '@repo/db';
-import { VendorPipeline, DrizzleRecordProcessor, eBayVendorClient } from '@repo/vendors';
+import { VendorPipeline, DrizzleRecordProcessor, eBayVendorClient, VendorError } from '@repo/vendors';
 import type { PageResult, VendorInventoryClient } from '@repo/vendors';
 
 // vendorId is the single source of truth — the key is derived from the client, not hardcoded separately
@@ -77,6 +77,11 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
         }
         console.log(`[ingest] deadline reached — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
     } catch (e) {
+        if (e instanceof VendorError && e.type === 'RATE_LIMIT') {
+            await repo.update(run.id, { lastChunkAt: new Date(), stats });
+            console.log(`[ingest] rate limited — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
+            return;
+        }
         await repo.update(run.id, {
             status: 'FAILED',
             errorMessage: e instanceof Error ? e.message : String(e),

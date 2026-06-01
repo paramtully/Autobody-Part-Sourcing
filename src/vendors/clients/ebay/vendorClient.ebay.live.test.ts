@@ -23,12 +23,16 @@ import eBayVendorClient from './vendorClient.ebay';
 
 const live = process.env['LIVE_TESTS'] === '1' ? describe : describe.skip;
 
+const LIVE_PAGE_SIZE = 2;
+
 live('eBay live smoke', () => {
   let client: eBayVendorClient;
+  let inventoryPage: Awaited<ReturnType<eBayVendorClient['fetchInventoryPage']>>;
 
-  beforeAll(() => {
-    client = new eBayVendorClient({ vendorId: 'ebay-ca', marketplaceId: 'EBAY_CA', tradingSiteId: '2' });
-  });
+  beforeAll(async () => {
+    client = new eBayVendorClient({ vendorId: 'ebay-ca', marketplaceId: 'EBAY_CA', tradingSiteId: '2', pageSize: LIVE_PAGE_SIZE });
+    inventoryPage = await client.fetchInventoryPage();
+  }, 120_000);
 
   it('getAuthStatus() returns valid=true with a future expiresAt', async () => {
     const status = await client.getAuthStatus();
@@ -37,19 +41,19 @@ live('eBay live smoke', () => {
     expect(status.expiresAt!.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('fetchInventoryPage() returns at least 1 raw record and a nextCursor', async () => {
-    const page = await client.fetchInventoryPage();
+  it('fetchInventoryPage() returns at least 1 raw record and a nextCursor', () => {
+    const page = inventoryPage;
     expect(Array.isArray(page.records)).toBe(true);
     expect(page.records.length).toBeGreaterThan(0);
+    expect(page.records.length).toBeLessThanOrEqual(LIVE_PAGE_SIZE);
     // nextCursor may be undefined on the only/last page, but should be a string when hasMore
     if (page.hasMore) {
       expect(typeof page.nextCursor).toBe('string');
     }
-  }, 60_000);
+  });
 
-  it('mapRecord(records[0]) returns a well-shaped VendorRecord', async () => {
-    const page = await client.fetchInventoryPage();
-    const raw = page.records[0];
+  it('mapRecord(records[0]) returns a well-shaped VendorRecord', () => {
+    const raw = inventoryPage.records[0];
     const record = client.mapRecord(raw);
 
     expect(record.part.name).toBeTruthy();
@@ -61,7 +65,7 @@ live('eBay live smoke', () => {
       .toContain(record.listing.condition);
     expect(['IN_STOCK', 'LOW_STOCK', 'BACKORDER', 'SPECIAL_ORDER', 'UNKNOWN'])
       .toContain(record.listing.availabilityStatus);
-  }, 60_000);
+  });
 
   it('authenticateUser() returns a valid token when EBAY_USER_REFRESH_TOKEN is set', async () => {
     if (!process.env['EBAY_USER_REFRESH_TOKEN']) {

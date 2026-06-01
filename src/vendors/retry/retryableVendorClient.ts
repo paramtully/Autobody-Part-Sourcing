@@ -25,12 +25,14 @@ export interface RetryOptions {
 
 export class RetryableVendorClient implements VendorInventoryClient {
     readonly vendorId: string;
+    readonly pageSize: number;
     private readonly inner: VendorInventoryClient;
     readonly options: RetryOptions;
 
 
     constructor(client: VendorInventoryClient, options: RetryOptions) {
         this.vendorId = client.vendorId;
+        this.pageSize = client.pageSize;
         this.inner = client;
         this.options = options;
         if (client.fetchFitmentsForNewParts) {

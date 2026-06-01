@@ -37,7 +37,7 @@ interface LKQConfig {
 
 export class LKQVendorClient implements VendorInventoryClient {
     public readonly vendorId = 'lkq';
-    private readonly DEFAULT_PAGE_SIZE = 500;
+    readonly pageSize = 500;
     private readonly config: LKQConfig = {
         vendorId: this.vendorId,
         baseUrl: process.env.LKQ_BASE_URL ?? 'https://api.lkqcorp.com/v1/inventory',
@@ -52,7 +52,7 @@ export class LKQVendorClient implements VendorInventoryClient {
         hasMore: boolean;
     }> {
         const timestamp = Date.now().toString();
-        const queryString = `cursor=${encodeURIComponent(cursor ?? '')}&limit=${this.DEFAULT_PAGE_SIZE}`;
+        const queryString = `cursor=${encodeURIComponent(cursor ?? '')}&limit=${this.pageSize}`;
         const signature = this.computeHmac(timestamp, queryString);
 
         let res: Response;

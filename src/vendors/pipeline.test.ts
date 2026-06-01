@@ -24,6 +24,7 @@ function makeRecord(externalId: string): VendorRecord {
 function makeClient(overrides: Partial<VendorInventoryClient> = {}): VendorInventoryClient {
     return {
         vendorId: 'test-vendor',
+        pageSize: 200,
         fetchInventoryPage: jest.fn().mockResolvedValue({
             records: [{}],
             nextCursor: undefined,

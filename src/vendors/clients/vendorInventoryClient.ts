@@ -1,8 +1,10 @@
 import { VendorRecord, UnknownRawVendorRecord, Fitment } from "./vendorRecord";
 
-
 export interface VendorInventoryClient {
     readonly vendorId: string;
+
+    /** Max records returned per {@link fetchInventoryPage} call. Set in the implementation constructor. */
+    readonly pageSize: number;
 
     /**
    * Get the current authentication status for this vendor's API.
