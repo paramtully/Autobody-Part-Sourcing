@@ -274,7 +274,6 @@ jobs:
       !cancelled() &&
       needs.changes.result == 'success' &&
       needs.terraform.result == 'success' &&
-      needs.changes.outputs.deploy_api == 'true' &&
       (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production
