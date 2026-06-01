@@ -1,18 +1,14 @@
 {
   "version": 2,
+  "installCommand": "cd ../.. && npm ci --workspaces --include-workspace-root",
   "builds": [
     {
-      "src": "server.ts",
+      "src": "dist/server.cjs",
       "use": "@vercel/node",
       "config": {
-        "maxDuration": 30,
-        "includeFiles": [
-          "../../src/db/**",
-          "../../src/ordering/**",
-          "../../src/affiliate/**"
-        ]
+        "maxDuration": 30
       }
     }
   ],
-  "routes": [{ "src": "/(.*)", "dest": "server.ts" }]
+  "routes": [{ "src": "/(.*)", "dest": "dist/server.cjs" }]
 }

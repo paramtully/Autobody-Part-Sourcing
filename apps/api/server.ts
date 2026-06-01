@@ -11,18 +11,13 @@ import { corsOrigins, isOriginExemptPath, isProductionApi } from './lib/allowedO
 const app = express();
 const PORT = process.env['PORT'] ?? 5050;
 
-app.use((req, res, next) => {
-    if (!isProductionApi() || isOriginExemptPath(req.path)) {
-        next();
-        return;
-    }
+function reflectCorsOrigin(req: express.Request, res: express.Response): void {
     const origin = req.headers.origin;
-    if (!origin || !corsOrigins().includes(origin)) {
-        res.status(403).json({ error: 'Forbidden' });
-        return;
+    if (origin && corsOrigins().includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
     }
-    next();
-});
+}
 
 app.use(
     cors({
@@ -35,8 +30,6 @@ app.use(
                 callback(null, false);
                 return;
             }
-            // Non-CORS requests have no Origin; the Origin gate middleware already
-            // returns 403 on protected paths before we reach route handlers.
             if (!origin) {
                 callback(null, true);
                 return;
@@ -49,6 +42,20 @@ app.use(
         },
     }),
 );
+
+app.use((req, res, next) => {
+    if (!isProductionApi() || isOriginExemptPath(req.path)) {
+        next();
+        return;
+    }
+    const origin = req.headers.origin;
+    if (!origin || !corsOrigins().includes(origin)) {
+        reflectCorsOrigin(req, res);
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+    }
+    next();
+});
 
 // Webhook route must use raw body — mount BEFORE express.json().
 // app.use('/webhooks/payment', paymentWebhookRouter);
@@ -64,8 +71,9 @@ app.use('/fitment', fitmentRouter);
 app.use('/vendors', vendorsRouter);
 // app.use('/checkout', checkoutRouter);
 
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);
+    reflectCorsOrigin(req, res);
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
 });

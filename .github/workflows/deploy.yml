@@ -39,21 +39,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
-      
-      # Temporary bootstrap: diff from repo root → head_sha deploys everything changed
-      # since the first commit. Revert to parent-SHA vs head_sha after first deploy.
-      - name: Resolve root commit
-        id: root
-        run: |
-          HEAD_SHA='${{ github.event.workflow_run.head_sha }}'
-          echo "sha=$(git rev-list --max-parents=0 "$HEAD_SHA")" >> "$GITHUB_OUTPUT"
+          fetch-depth: 2
 
       - name: Detect changed paths
         uses: dorny/paths-filter@v4
         id: filter
         with:
-          base: ${{ steps.root.outputs.sha }}
+          base: ${{ github.event.workflow_run.head_sha }}^
           ref: ${{ github.event.workflow_run.head_sha }}
           filters: |
             infra:
@@ -296,6 +288,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --workspaces --include-workspace-root
 
+      - name: Bundle API for serverless
+        run: npm run build -w api
+
       # Repo root only (never working-directory: apps/api). root_directory is apps/api in Terraform.
       # vercel build writes apps/api/.vercel/output; plain --prebuilt deploy doubles that path — use --archive=tgz.
       - name: Pull Vercel settings
@@ -376,22 +371,52 @@ jobs:
       always() &&
       !cancelled() &&
       (needs.deploy-api.result == 'success' ||
-       needs.deploy-client.result == 'success' ||
-       needs.lambdas.result == 'success')
+       needs.deploy-client.result == 'success')
     runs-on: ubuntu-latest
+    # DOMAIN_NAME is set on the production environment; vars are not visible without this.
+    environment: production
+    env:
+      DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+      DEPLOYED_API: ${{ needs.deploy-api.result == 'success' }}
+      DEPLOYED_CLIENT: ${{ needs.deploy-client.result == 'success' }}
     steps:
-      - name: Verify API health
-        if: >-
-          needs.deploy-api.result == 'success' &&
-          vars.DOMAIN_NAME != ''
+      - name: Require DOMAIN_NAME for smoke checks
+        if: env.DEPLOYED_API == 'true' || env.DEPLOYED_CLIENT == 'true'
         run: |
-          curl --fail --silent --show-error \
-            "https://api.${{ vars.DOMAIN_NAME }}/health"
+          set -euo pipefail
+          if [ -z "${DOMAIN_NAME}" ]; then
+            echo "::error::DOMAIN_NAME is not set on the production environment (or repository variables). Smoke checks cannot run."
+            exit 1
+          fi
+
+      - name: Verify API health
+        if: env.DEPLOYED_API == 'true'
+        run: |
+          set -euo pipefail
+          url="https://api.${DOMAIN_NAME}/health"
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error "$url"; then
+              echo "OK $url"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/5 failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::API health check failed: $url"
+          exit 1
 
       - name: Verify frontend reachable
-        if: >-
-          needs.deploy-client.result == 'success' &&
-          vars.DOMAIN_NAME != ''
+        if: env.DEPLOYED_CLIENT == 'true'
         run: |
-          curl --fail --silent --show-error \
-            "https://${{ vars.DOMAIN_NAME }}"
+          set -euo pipefail
+          url="https://${DOMAIN_NAME}"
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --output /dev/null "$url"; then
+              echo "OK $url"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/5 failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Frontend check failed: $url"
+          exit 1

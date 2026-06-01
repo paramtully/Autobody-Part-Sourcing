@@ -7,7 +7,7 @@
     "dev": "node --env-file=../../.env ../../node_modules/.bin/tsx watch server.ts",
     "lint": "eslint . -c ../../eslint.node.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
-    "build": "tsc --noEmit -p tsconfig.check.json"
+    "build": "node build.mjs && tsc --noEmit -p tsconfig.check.json"
   },
   "keywords": [],
   "author": "",
