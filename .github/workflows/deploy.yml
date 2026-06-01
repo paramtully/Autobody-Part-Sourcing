@@ -292,23 +292,25 @@ jobs:
 
       - run: npm install -g vercel@latest
 
+      - name: Install dependencies
+        run: npm ci --workspaces --include-workspace-root
+
+      # Repo root only (never working-directory: apps/api). root_directory is apps/api in Terraform.
+      # vercel build writes apps/api/.vercel/output; plain --prebuilt deploy doubles that path — use --archive=tgz.
       - name: Pull Vercel settings
-        working-directory: apps/api
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
 
       - name: Build API
-        working-directory: apps/api
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
 
       - name: Deploy API
-        working-directory: apps/api
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --archive=tgz --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_api_project_id }}
@@ -337,23 +339,24 @@ jobs:
 
       - run: npm install -g vercel@latest
 
+      - name: Install dependencies
+        run: npm ci --workspaces --include-workspace-root
+
+      # Same monorepo prebuilt rules as deploy-api (root_directory apps/client in Terraform).
       - name: Pull Vercel settings
-        working-directory: apps/client
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
 
       - name: Build Client
-        working-directory: apps/client
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
 
       - name: Deploy Client
-        working-directory: apps/client
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --archive=tgz --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ needs.terraform.outputs.vercel_client_project_id }}
