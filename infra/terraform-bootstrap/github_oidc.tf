@@ -59,6 +59,9 @@ resource "aws_iam_role_policy" "gh_deploy" {
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
           "lambda:PublishVersion",
+          "lambda:PutFunctionConcurrency",
+          "lambda:GetFunctionConcurrency",
+          "lambda:DeleteFunctionConcurrency",
           "lambda:TagResource",
           "lambda:ListTags",
         ]
