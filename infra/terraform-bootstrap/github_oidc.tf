@@ -69,8 +69,9 @@ resource "aws_iam_role_policy" "gh_deploy" {
         Effect = "Allow"
         Action = ["iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:DeleteRole",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy", "iam:GetRolePolicy", "iam:ListRolePolicies",
+          "iam:DeleteRolePolicy", "iam:GetRolePolicy",           "iam:ListRolePolicies",
           "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
           "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy",
         ]
         Resource = "*"
