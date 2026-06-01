@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       '**/*.test.ts',
       '**/*.js',
+      '**/*.mjs',
       '**/*.d.ts',
       '**/dist/**',
       '**/.next/**',
