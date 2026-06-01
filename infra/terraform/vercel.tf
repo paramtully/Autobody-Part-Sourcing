@@ -10,9 +10,10 @@ locals {
 }
 
 resource "vercel_project" "api" {
-  name           = "${var.application}-api"
-  root_directory = "apps/api"
-  node_version   = "20.x"
+  name            = "${var.application}-api"
+  root_directory  = "apps/api"
+  node_version    = "20.x"
+  install_command = "cd ../.. && npm ci --workspaces --include-workspace-root"
 }
 
 resource "vercel_project" "client" {
@@ -49,6 +50,15 @@ resource "vercel_project_environment_variable" "api_database_url" {
   project_id = vercel_project.api.id
   key        = "DATABASE_URL"
   value      = var.database_url
+  target     = ["production"]
+}
+
+resource "vercel_project_environment_variable" "api_domain_name" {
+  count = var.domain_name != "" ? 1 : 0
+
+  project_id = vercel_project.api.id
+  key        = "DOMAIN_NAME"
+  value      = var.domain_name
   target     = ["production"]
 }
 

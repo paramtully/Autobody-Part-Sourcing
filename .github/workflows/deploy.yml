@@ -175,6 +175,7 @@ jobs:
             -target=vercel_project_domain.client \
             -target=vercel_project_domain.client_www \
             -target=vercel_project_environment_variable.api_database_url \
+            -target=vercel_project_environment_variable.api_domain_name \
             -target=vercel_project_environment_variable.api_ebay_epn_campid \
             -target=vercel_project_environment_variable.client_api_base_url
 
