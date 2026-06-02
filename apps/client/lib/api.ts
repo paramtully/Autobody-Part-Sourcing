@@ -77,7 +77,7 @@ export async function fetchMakesWithModels(): Promise<Record<string, string[]>> 
   return metadataFetch('/fitment/makes-with-models');
 }
 
-export async function fetchYears(): Promise<{ years: { year: number }[] }> {
+export async function fetchYears(): Promise<{ years: number[] }> {
   return metadataFetch('/fitment/years');
 }
 

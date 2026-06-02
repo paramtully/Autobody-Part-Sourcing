@@ -37,7 +37,7 @@ export default function FitmentWizard() {
 
   const makes = makesData ? Object.keys(makesData).sort() : [];
   const models = make && makesData ? (makesData[make] ?? []).sort() : [];
-  const years = yearsData?.years.map(y => y.year).sort((a, b) => b - a) ?? [];
+  const years = [...(yearsData?.years ?? [])].sort((a, b) => b - a);
   const categories = categoriesData?.categories ?? [];
   const positions = positionsData?.positions ?? [];
   const constraints = constraintsData?.constraints ?? [];

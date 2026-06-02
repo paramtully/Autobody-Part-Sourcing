@@ -1,22 +1,9 @@
 import Link from 'next/link';
-import { fetchVendors } from '@/lib/api';
-import { uniqueVendorsByName } from '@/lib/vendors';
 import Container from '@/components/layout/Container';
+import SearchableVendors from '@/components/landing/SearchableVendors';
 import { Search, GitCompare, ExternalLink, Phone, Clock, ShieldCheck, Star, Zap, BarChart3, ArrowRight, CheckCircle } from 'lucide-react';
 
-async function getLandingData() {
-  try {
-    const { vendors } = await fetchVendors();
-    return { vendors };
-  } catch {
-    return { vendors: [] };
-  }
-}
-
-export default async function LandingPage() {
-  const { vendors } = await getLandingData();
-  const displayVendors = uniqueVendorsByName(vendors);
-
+export default function LandingPage() {
   return (
     <div className="bg-[#F7F8FA]">
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
@@ -217,26 +204,7 @@ export default async function LandingPage() {
                 ))}
               </div>
             </div>
-            <div className="bg-[#111827] rounded-xl p-6 text-white">
-              <p className="text-[12px] text-white/50 uppercase tracking-wide mb-3">Searchable vendors</p>
-              {displayVendors.length === 0 ? (
-                <p className="text-[13px] text-white/40 py-2">Loading vendor list…</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {(['OEM', 'AFTERMARKET', 'SALVAGE', 'MARKETPLACE'] as const)
-                    .filter(type => displayVendors.some(v => v.vendorType === type))
-                    .map(type => (
-                      <div key={type} className="bg-white/5 rounded-lg p-3">
-                        <p className="text-[11px] text-white/50 mb-1">{type}</p>
-                        <p className="text-[13px] font-medium">
-                          {displayVendors.filter(v => v.vendorType === type).length} connected
-                        </p>
-                      </div>
-                    ))}
-                </div>
-              )}
-              <p className="text-[11px] text-white/40 mt-4">More vendors added continuously.</p>
-            </div>
+            <SearchableVendors />
           </div>
         </Container>
       </section>
