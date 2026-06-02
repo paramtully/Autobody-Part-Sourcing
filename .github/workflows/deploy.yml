@@ -59,7 +59,9 @@ jobs:
         uses: dorny/paths-filter@v4
         id: filter
         with:
-          base: ${{ github.event.workflow_run.head_branch }}
+          # Bootstrap: diff root..head_sha (all history). After first prod deploy,
+          # switch base to head_sha^ or head_branch for parent-only detection.
+          base: ${{ steps.root.outputs.sha }}
           ref: ${{ github.event.workflow_run.head_sha }}
           filters: |
             infra:
