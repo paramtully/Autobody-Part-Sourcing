@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Container from '@/components/layout/Container';
 import SearchableVendors from '@/components/landing/SearchableVendors';
+import VendorNameChips from '@/components/landing/VendorNameChips';
 import { Search, GitCompare, ExternalLink, Phone, Clock, ShieldCheck, Star, Zap, BarChart3, ArrowRight, CheckCircle } from 'lucide-react';
 
 export default function LandingPage() {
@@ -87,21 +88,7 @@ export default function LandingPage() {
               Aggregating inventory from:
             </p>
             <div className="flex flex-wrap gap-2">
-              {displayVendors.length > 0 ? (
-                displayVendors.map(v => (
-                  <span
-                    key={v.name}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#F7F8FA] border border-[#E5E7EB] rounded-md text-[12px] font-medium text-[#475569]"
-                  >
-                    <span
-                      className={`inline-block w-2 h-2 rounded-full ${v.vendorType === 'OEM' ? 'bg-blue-500' : v.vendorType === 'SALVAGE' ? 'bg-amber-500' : 'bg-green-500'}`}
-                    />
-                    {v.name}
-                  </span>
-                ))
-              ) : (
-                <span className="text-[12px] text-[#94A3B8]">Loading vendor list…</span>
-              )}
+              <VendorNameChips />
             </div>
             <div className="flex items-center gap-1.5 text-[12px] text-[#475569]">
               <Clock size={13} className="text-green-600" />
