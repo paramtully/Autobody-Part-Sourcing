@@ -1,6 +1,16 @@
 import express, { type Request, type Response } from 'express';
-import { db, partCategoryEnum, partPositionEnum, fitmentConstraintEnum, fitments, partFitments } from '@repo/db';
-import { eq, sql, asc, desc } from 'drizzle-orm';
+import {
+    db,
+    partCategoryEnum,
+    partPositionEnum,
+    fitmentConstraintEnum,
+    fitments,
+    partFitments,
+    parts,
+    partIdentifiers,
+    listings,
+} from '@repo/db';
+import { eq, sql, asc, desc, and } from 'drizzle-orm';
 import { setStaticCacheHeaders } from '../lib/cacheHeaders.js';
 
 const router = express.Router();
@@ -41,14 +51,30 @@ router.get('/makes-with-models', (_req: Request, res: Response) => {
     });
 });
 
-router.get('/years', (_req: Request, res: Response) => {
+router.get('/years', (req: Request, res: Response) => {
+    const make = req.query.make?.toString().trim();
+    const model = req.query.model?.toString().trim();
+    if (!make || !model) {
+        return res.status(400).json({ error: 'make and model are required' });
+    }
+
     setStaticCacheHeaders(res);
-    db.selectDistinct({ year: fitments.year }).from(fitments)
-    .then((rows: any[]) => res.status(200).json({ years: rows.map((row: any) => row.year) }))
-    .catch((err: Error) => {
-        console.log('Failed to get years from database:', err);
-        return res.status(500).json({error: 'Error: ' + err});
-    });
+    db.selectDistinct({ year: fitments.year })
+        .from(fitments)
+        .innerJoin(partFitments, eq(partFitments.fitmentId, fitments.id))
+        .innerJoin(parts, eq(parts.id, partFitments.partId))
+        .innerJoin(partIdentifiers, eq(partIdentifiers.partId, parts.id))
+        .innerJoin(listings, eq(listings.partIdentifierId, partIdentifiers.id))
+        .where(and(
+            sql`lower(${fitments.make}) = lower(${make})`,
+            sql`lower(${fitments.model}) = lower(${model})`,
+        ))
+        .orderBy(desc(fitments.year))
+        .then((rows: { year: number }[]) => res.status(200).json({ years: rows.map(row => row.year) }))
+        .catch((err: Error) => {
+            console.log('Failed to get years from database:', err);
+            return res.status(500).json({ error: 'Error: ' + err });
+        });
 });
 
 // Returns one row per distinct (make, model, year, trim, engine, constraint)

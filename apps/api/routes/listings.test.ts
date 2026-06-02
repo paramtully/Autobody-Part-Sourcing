@@ -98,6 +98,63 @@ describe('GET /listings/by-fitment', () => {
   });
 });
 
+// ── Affiliate decoration ─────────────────────────────────────────────────────
+
+describe('affiliate sourceUrl decoration', () => {
+  const CAMPID = '5338123456';
+  const HASH_URL =
+    'https://www.ebay.ca/itm/225790420905?hash=item34922867a9:g:zA0AAOSwCcZlL5T8';
+
+  beforeAll(() => {
+    process.env.EBAY_EPN_CAMPID = CAMPID;
+  });
+
+  afterAll(() => {
+    delete process.env.EBAY_EPN_CAMPID;
+  });
+
+  beforeEach(async () => {
+    jest.resetModules();
+    testDb = await createTestDb();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    (require('@repo/db') as Record<string, unknown>)['db'] = testDb;
+    await seedVendor(testDb, 'ebay-ca');
+    app = makeApp();
+  });
+
+  it('wraps eBay listings with direct EPN params (not rover)', async () => {
+    const partId = await seedPart(testDb, {
+      identifier: { type: 'AFTERMARKET', value: 'AFF-EBAY-001' },
+    });
+    const fitmentId = await seedFitment(testDb, { make: 'Honda', model: 'Civic', year: 2018 });
+    const { partFitments } = await import('../../../src/db/models/parts');
+    await testDb.insert(partFitments).values({ partId, fitmentId }).onConflictDoNothing();
+
+    const piRes = await testDb.execute<{ id: string }>(
+      `SELECT id FROM part_identifiers WHERE value = 'AFFEBAY001' LIMIT 1`,
+    );
+    const piId = piRes.rows[0]!.id;
+    await seedListing(testDb, {
+      partIdentifierId: piId,
+      externalId: 'AFF-ITEM-1',
+      sourceUrl: HASH_URL,
+    });
+
+    const res = await request(app)
+      .get('/listings/by-fitment')
+      .query({ make: 'Honda', model: 'Civic', year: '2018' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings).toHaveLength(1);
+    const sourceUrl: string = res.body.listings[0].sourceUrl;
+    expect(sourceUrl).not.toContain('rover.ebay.com');
+    expect(sourceUrl).not.toContain('hash=');
+    expect(sourceUrl).toContain('mkevt=1');
+    expect(sourceUrl).toContain(`campid=${CAMPID}`);
+    expect(sourceUrl).toContain('mkrid=706-53473-19255-0');
+  });
+});
+
 // ── GET /listings/by-part-number/:partNumber ──────────────────────────────────
 
 describe('GET /listings/by-part-number/:partNumber', () => {

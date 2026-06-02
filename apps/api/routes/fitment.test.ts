@@ -5,7 +5,7 @@
 import express from 'express';
 import request from 'supertest';
 import { createTestDb, type TestDb } from '../../../test/setup/pgliteDb';
-import { seedVendor, seedPart, seedFitment } from '../../../test/setup/seed';
+import { seedVendor, seedPart, seedFitment, seedListing } from '../../../test/setup/seed';
 
 // ── @repo/db mock ─────────────────────────────────────────────────────────────
 
@@ -100,18 +100,50 @@ describe('GET /fitment/makes-with-models', () => {
 // ── GET /fitment/years ────────────────────────────────────────────────────────
 
 describe('GET /fitment/years', () => {
-  it('normal — returns distinct years', async () => {
-    await seedFitment(testDb, { make: 'Honda', model: 'Civic', year: 2018 });
-    await seedFitment(testDb, { make: 'Toyota', model: 'Camry', year: 2019 });
-    await seedFitment(testDb, { make: 'Honda', model: 'Accord', year: 2019 }); // duplicate year
+  it('edge — missing make or model returns 400', async () => {
+    expect((await request(app).get('/fitment/years')).status).toBe(400);
+    expect((await request(app).get('/fitment/years').query({ make: 'Honda' })).status).toBe(400);
+    expect((await request(app).get('/fitment/years').query({ model: 'Civic' })).status).toBe(400);
+  });
 
-    const res = await request(app).get('/fitment/years');
+  it('normal — returns distinct years with listings for make/model', async () => {
+    const partId = await seedPart(testDb, {
+      identifier: { type: 'AFTERMARKET', value: 'YRS-CIVIC-001' },
+    });
+    const { partFitments } = await import('../../../src/db/models/parts');
+    const fitment2018 = await seedFitment(testDb, { make: 'Honda', model: 'Civic', year: 2018 });
+    const fitment2019 = await seedFitment(testDb, { make: 'Honda', model: 'Civic', year: 2019 });
+    await testDb.insert(partFitments).values([
+      { partId, fitmentId: fitment2018 },
+      { partId, fitmentId: fitment2019 },
+    ]).onConflictDoNothing();
+
+    const piRes = await testDb.execute<{ id: string }>(
+      `SELECT id FROM part_identifiers WHERE value = 'YRSCIVIC001' LIMIT 1`,
+    );
+    const piId = piRes.rows[0]!.id;
+    await seedListing(testDb, { partIdentifierId: piId, externalId: 'YRS-ITEM-1' });
+
+    const res = await request(app)
+      .get('/fitment/years')
+      .query({ make: 'Honda', model: 'Civic' });
+
     expect(res.status).toBe(200);
     const years: number[] = res.body.years;
     expect(years).toContain(2018);
     expect(years).toContain(2019);
-    // No duplicates
     expect(new Set(years).size).toBe(years.length);
+  });
+
+  it('edge — fitment without listings is excluded', async () => {
+    await seedFitment(testDb, { make: 'Honda', model: 'Civic', year: 2017 });
+
+    const res = await request(app)
+      .get('/fitment/years')
+      .query({ make: 'Honda', model: 'Civic' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.years).not.toContain(2017);
   });
 });
 

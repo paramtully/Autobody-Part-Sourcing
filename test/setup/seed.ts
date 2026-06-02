@@ -80,6 +80,7 @@ export async function seedListing(
     partIdentifierId: string;
     externalId?: string;
     priceMinorMin?: number;
+    sourceUrl?: string;
   },
 ) {
   const [row] = await db
@@ -92,6 +93,7 @@ export async function seedListing(
       availabilityStatus: 'IN_STOCK',
       priceMinorMin: opts.priceMinorMin ?? 1000,
       currency: 'USD',
+      sourceUrl: opts.sourceUrl,
       source: 'VENDOR_API',
       lastSeenAt: new Date(),
       lastVerifiedAt: new Date(),

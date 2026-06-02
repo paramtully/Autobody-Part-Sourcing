@@ -2,7 +2,8 @@
 
 import { useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { VendorDTO, CurrencyFilter } from '@/lib/types';
+import type { CurrencyFilter } from '@/lib/types';
+import type { VendorFilterOption } from '@/lib/vendors';
 import { cn } from '@/lib/cn';
 
 const CONDITIONS = [
@@ -20,7 +21,7 @@ const AVAILABILITY = [
 ];
 
 interface FiltersSidebarProps {
-  vendors: VendorDTO[];
+  vendors: VendorFilterOption[];
   className?: string;
 }
 
@@ -57,6 +58,17 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
       updateParam(key, next.join(','));
     },
     [updateParam],
+  );
+
+  const toggleVendorGroup = useCallback(
+    (filterVendorIds: string[]) => {
+      const allSelected = filterVendorIds.every(id => selectedVendors.includes(id));
+      const next = allSelected
+        ? selectedVendors.filter(id => !filterVendorIds.includes(id))
+        : [...new Set([...selectedVendors, ...filterVendorIds])];
+      updateParam('vendorId', next.join(','));
+    },
+    [selectedVendors, updateParam],
   );
 
   // Region is sticky context — not a filter — so it never contributes to hasFilters
@@ -144,8 +156,8 @@ export default function FiltersSidebar({ vendors, className }: FiltersSidebarPro
               key={v.id}
               label={v.name}
               sublabel={v.vendorType}
-              checked={selectedVendors.includes(v.id)}
-              onChange={() => toggleList('vendorId', selectedVendors, v.id)}
+              checked={v.filterVendorIds.every(id => selectedVendors.includes(id))}
+              onChange={() => toggleVendorGroup(v.filterVendorIds)}
             />
           ))}
         </FilterSection>

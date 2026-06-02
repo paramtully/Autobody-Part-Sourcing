@@ -46,11 +46,12 @@
       "<rootDir>/src/**/*.test.ts",
       "<rootDir>/src/**/*.live.test.ts",
       "<rootDir>/apps/api/**/*.test.ts",
-      "<rootDir>/apps/workers/**/*.test.ts"
+      "<rootDir>/apps/workers/**/*.test.ts",
+      "<rootDir>/apps/client/lib/**/*.test.ts"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/apps/client/"
+      "/apps/client/(?!lib/)"
     ],
     "setupFiles": [
       "<rootDir>/test/setup/env.ts"

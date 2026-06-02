@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { Filter, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import FiltersSidebar from './FiltersSidebar';
-import type { VendorDTO } from '@/lib/types';
+import type { VendorFilterOption } from '@/lib/vendors';
 
 interface MobileFilterDrawerProps {
-  vendors: VendorDTO[];
+  vendors: VendorFilterOption[];
 }
 
 export default function MobileFilterDrawer({ vendors }: MobileFilterDrawerProps) {

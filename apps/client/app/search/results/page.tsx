@@ -20,6 +20,7 @@ import ErrorState from '@/components/results/ErrorState';
 import CompareTray from '@/components/results/CompareTray';
 import Container from '@/components/layout/Container';
 import { cn } from '@/lib/cn';
+import { vendorsForFilter } from '@/lib/vendors';
 
 const TABLE_COLUMNS = [
   { key: 'select', label: '', width: 'w-10' },
@@ -80,6 +81,8 @@ export default function ResultsPage() {
     queryFn: fetchVendors,
     staleTime: 5 * 60_000,
   });
+
+  const filterVendors = vendorsForFilter(vendorsData?.vendors ?? []);
 
   // Listings query — note: partType is applied client-side (see below) so it
   // doesn't appear in the queryKey or in the API call. Flipping OEM/AFTERMARKET
@@ -207,14 +210,14 @@ export default function ResultsPage() {
         <div className="flex gap-6 items-start">
           {/* Filters sidebar — desktop/tablet only */}
           <div className="hidden md:block shrink-0 no-print">
-            <FiltersSidebar vendors={vendorsData?.vendors ?? []} />
+            <FiltersSidebar vendors={filterVendors} />
           </div>
 
           {/* Main results column — always rendered */}
           <div className="flex-1 min-w-0">
             {/* Mobile filter drawer trigger — sits above results, inside results column */}
             <div className="md:hidden flex items-center gap-2 mb-3">
-              <MobileFilterDrawer vendors={vendorsData?.vendors ?? []} />
+              <MobileFilterDrawer vendors={filterVendors} />
             </div>
 
             {!isEnabled ? (

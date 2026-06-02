@@ -30,7 +30,12 @@ export default function FitmentWizard() {
   const vinInputRef = useRef<HTMLInputElement>(null);
 
   const { data: makesData } = useQuery({ queryKey: ['fitment', 'makes'], queryFn: fetchMakesWithModels, staleTime: 10 * 60_000 });
-  const { data: yearsData } = useQuery({ queryKey: ['fitment', 'years'], queryFn: fetchYears, staleTime: 10 * 60_000 });
+  const { data: yearsData } = useQuery({
+    queryKey: ['fitment', 'years', make, model],
+    queryFn: () => fetchYears(make, model),
+    enabled: !!make && !!model,
+    staleTime: 10 * 60_000,
+  });
   const { data: categoriesData } = useQuery({ queryKey: ['fitment', 'categories'], queryFn: fetchCategories, staleTime: 10 * 60_000 });
   const { data: positionsData } = useQuery({ queryKey: ['fitment', 'positions'], queryFn: fetchPositions, staleTime: 10 * 60_000 });
   const { data: constraintsData } = useQuery({ queryKey: ['fitment', 'constraints'], queryFn: fetchConstraints, staleTime: 10 * 60_000 });
@@ -43,7 +48,15 @@ export default function FitmentWizard() {
   const constraints = constraintsData?.constraints ?? [];
 
   // Reset dependent fields when parent changes
-  useEffect(() => { setModel(''); setCategory(''); setPosition(''); setConstraint(''); }, [make]);
+  useEffect(() => {
+    setModel('');
+    setYear('');
+    setCategory('');
+    setPosition('');
+    setConstraint('');
+  }, [make]);
+
+  useEffect(() => { setYear(''); }, [model]);
 
   const isReady = !!(year && make && model);
 
@@ -150,18 +163,8 @@ export default function FitmentWizard() {
       {/* Divider */}
       <div className="border-t border-[#E5E7EB]" />
 
-      {/* Row 1: Year, Make, Model */}
+      {/* Row 1: Make, Model, Year */}
       <div className="grid grid-cols-3 gap-3">
-        <WizardSelect
-          label="Year"
-          value={year}
-          onChange={setYear}
-          placeholder="Year"
-          disabled={years.length === 0}
-        >
-          {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
-        </WizardSelect>
-
         <WizardSelect
           label="Make"
           value={make}
@@ -180,6 +183,16 @@ export default function FitmentWizard() {
           disabled={!make || models.length === 0}
         >
           {models.map(m => <option key={m} value={m}>{m}</option>)}
+        </WizardSelect>
+
+        <WizardSelect
+          label="Year"
+          value={year}
+          onChange={setYear}
+          placeholder={model ? 'Year' : 'Select model first'}
+          disabled={!make || !model || years.length === 0}
+        >
+          {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
         </WizardSelect>
       </div>
 

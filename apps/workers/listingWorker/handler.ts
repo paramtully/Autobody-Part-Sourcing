@@ -20,8 +20,8 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
 
     // default to 180 minute ingestion interval, with 3 minute safety margin and 12 minute Lambda timeout
     const intervalMs = Number(process.env['INGEST_INTERVAL_MS'] ?? 180 * 60 * 1000);
-    // 24 hour cooldown period for rate limiting
-    const rateLimitPauseMs = Number(process.env['RATE_LIMIT_PAUSE_MS'] ?? 24 * 60 * 60 * 1000);
+    // 6 hour cooldown after rate limit; each new limit updates lastChunkAt and restarts the window
+    const rateLimitPauseMs = Number(process.env['RATE_LIMIT_PAUSE_MS'] ?? 6 * 60 * 60 * 1000);
     const safetyMs = 3 * 60 * 1000;
     const runtimeMs = ctx?.getRemainingTimeInMillis?.() ?? Number(process.env['INGEST_TIMEOUT_MS'] ?? 12 * 60 * 1000);
     const deadlineAt = Date.now() + runtimeMs - safetyMs;

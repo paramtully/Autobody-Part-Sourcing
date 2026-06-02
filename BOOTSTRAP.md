@@ -79,7 +79,7 @@ Restrict the environment to the `main` branch.
 | `EBAY_RU_NAME` | (Optional) eBay RuName for user OAuth |
 | `EBAY_EPN_CAMPID` | (Optional) Affiliate link campaign ID — Vercel API only; US/CA MKRIDs are built into the API |
 
-> eBay Partner Network MKRIDs for `ebay.com` and `ebay.ca` are hardcoded in the affiliate package (not env vars).
+> eBay Partner Network MKRIDs for `ebay.com` and `ebay.ca` are hardcoded in the affiliate package (not env vars). Listing links append EPN tracking query params directly to the item URL (not `rover.ebay.com` redirects).
 
 > **`EBAY_API_URL` is not a production secret.** The listing workers default to `https://api.ebay.com` when the variable is unset. Set it in your local `.env` only when you need the sandbox endpoint.
 
