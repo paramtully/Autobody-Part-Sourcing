@@ -6,7 +6,7 @@
 |---|---|
 | **Live** | [getboneyard.com](https://getboneyard.com) |
 | **Stack** | TypeScript · Next.js · Express · Postgres · AWS Lambda · Vercel · Terraform |
-| **Shipped with tests** | **138** automated tests (PGlite in CI, no hosted DB for unit runs) · live smoke on `main` · OIDC deploy, no long-lived AWS keys |
+| **Shipped with tests** | **160+** automated tests (PGlite in CI, no hosted DB for unit runs) · live smoke on `main` · OIDC deploy, no long-lived AWS keys |
 
 <!-- Add: your name · email · LinkedIn · 1–2 screenshots -->
 
@@ -18,7 +18,37 @@ Scheduled workers ingest supplier catalogs into **one normalized database**; the
 
 - **Vendor plugin model** — `VendorInventoryClient` + shared pipeline; eBay US/CA live, LKQ stubbed. New vendor ≈ mapper + config, not a second worker codebase.
 - **Resumable ingestion** — Paged catalogs, cursor checkpointing, one concurrent Lambda per vendor (12 min budget).
-- **MVP scope** — Search/compare shipped; checkout/Stripe in `src/ordering/`, API routes not enabled yet.
+- **Search/compare in prod** — Fitment wizard, VIN decode, filters, compare tray ([`apps/client/`](apps/client/)).
+
+---
+
+## Production deployment
+
+```mermaid
+flowchart TB
+  Shop[Shops] --> WEB[Next.js · getboneyard.com]
+  WEB --> API[Express API · api.getboneyard.com]
+  API --> PG[(Postgres)]
+
+  EB[EventBridge] --> LWUS[listing-worker-ebay-us]
+  EB --> LWCA[listing-worker-ebay-ca]
+  LWUS --> PG
+  LWCA --> PG
+  LWUS --> eBay[eBay APIs]
+  LWCA --> eBay
+
+  GHA[GitHub Actions] -->|OIDC| AWS[AWS Lambda + IAM]
+  GHA -->|after CI| VER[Vercel client + API]
+
+  API -.->|checkout routes off| Stripe[Stripe]
+```
+
+| Piece | Where |
+|-------|--------|
+| Client + API | Vercel (`apps/client`, `apps/api`) |
+| Database | Postgres (Supabase pooler in prod) |
+| Catalog sync | One Lambda per vendor, EventBridge schedule, shared worker code |
+| Deploy | CI on every PR; deploy on `main` after CI · path filters skip unchanged packages · [BOOTSTRAP.md](./BOOTSTRAP.md) |
 
 ---
 
@@ -52,15 +82,39 @@ Code: [`src/db/models/`](src/db/models/) · [`src/vendors/recordProcessor/record
 
 ---
 
-## Architecture
+## Checkout (implemented · not live)
+
+**Status:** Domain code and API routes exist; **`/checkout` and payment webhooks are commented out** in [`apps/api/server.ts`](apps/api/server.ts) until vendor order APIs and Stripe webhooks are production-ready. Search/compare is what ships today.
 
 ```mermaid
-flowchart TB
-  APIs[Supplier APIs] --> LW[Lambdas per vendor]
-  LW --> DB[(Postgres)]
-  DB --> API[Express API]
-  API --> WEB[Next.js]
+sequenceDiagram
+  participant UI as Client
+  participant API as Express
+  participant CS as CheckoutService
+  participant V as Vendor order API
+  participant DB as Postgres
+  participant S as Stripe
+
+  UI->>API: POST /checkout/quote
+  API->>CS: createQuote
+  CS->>V: live item + shipping quote
+  CS->>DB: persist checkout_quotes
+  UI->>API: POST /checkout/confirm
+  API->>CS: confirm (idempotency key)
+  CS->>DB: order + outbox event (one transaction)
+  CS->>S: PaymentIntent + Tax
+  Note over API,S: Routes disabled in prod today
 ```
+
+- **Quote → confirm** — Vendor-sourced pricing; platform fee computed server-side; amounts read from DB on confirm (no client-supplied totals).
+- **Stripe** — `PaymentProviderAdapter` + webhook handler; blocks `EMAIL_MANUAL` vendors (auth-hold window).
+- **Reliability** — Idempotent confirm; order + quote delete + **transactional outbox** in one DB transaction; `OutboxPublisher` for async side effects.
+
+Code: [`src/ordering/`](src/ordering/) · [`apps/api/routes/checkout.ts`](apps/api/routes/checkout.ts)
+
+---
+
+## CI/CD
 
 ```mermaid
 flowchart LR
@@ -74,7 +128,6 @@ flowchart LR
 
 - **Search API:** fitment + part-number queries; `DISTINCT ON` so multi-trim joins do not duplicate listings ([`listings.ts`](apps/api/routes/listings.ts)).
 - **Deploy:** runs only after CI passes; **path filters** skip unchanged services (client vs API vs workers).
-- **Ops:** [BOOTSTRAP.md](./BOOTSTRAP.md)
 
 ---
 
@@ -85,6 +138,7 @@ flowchart LR
 | [`src/vendors/`](src/vendors/) | Plugin interface, pipeline, batch ingest |
 | [`apps/api/routes/listings.ts`](apps/api/routes/listings.ts) | Search + pagination |
 | [`apps/client/`](apps/client/) | Fitment wizard, results, compare |
+| [`src/ordering/`](src/ordering/) | Checkout, Stripe adapter, outbox |
 
 ---
 
