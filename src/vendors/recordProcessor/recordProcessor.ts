@@ -30,9 +30,8 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
     async validateAndUpsert(records: VendorRecord[], vendorId: string): Promise<BatchResult> {
         records = records.map(normalizeVendorRecord);
-        // Phase 1: bulk reads
+        // Phase 1: bulk reads (fitment prefetch runs inside the write tx for a consistent snapshot)
         const [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
-        const fitmentKeyToId = await this.getFitmentMappings(records);
 
         // Phase 2: in-memory resolve → three separate arrays
         const [newRecords, existingRecords, conflictRecords]: [ResolvedRecord[], ResolvedRecord[], ResolvedRecord[]] =
@@ -51,6 +50,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         const warehouseLocationCache = new Map<string, string>();
 
         await db.transaction(async (tx) => {
+            const fitmentKeyToId = await this.getFitmentMappings(records, tx);
 
             // 4-pre: bulk-resolve all unique fitments across the batch in a single roundtrip.
             // Without this, Trading API matrices (1k–2k fitments per record) cause tens of
@@ -145,9 +145,10 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
             // 4-mid: bulk-insert all part_fitments pairs in chunks (PG param limit ≈ 65k → 2 cols × 30k rows)
             if (partFitmentPairs.length > 0) {
+                const dedupedPairs = this.dedupePartFitmentPairs(partFitmentPairs);
                 const CHUNK = 30_000;
-                for (let i = 0; i < partFitmentPairs.length; i += CHUNK) {
-                    await tx.insert(partFitments).values(partFitmentPairs.slice(i, i + CHUNK)).onConflictDoNothing();
+                for (let i = 0; i < dedupedPairs.length; i += CHUNK) {
+                    await tx.insert(partFitments).values(dedupedPairs.slice(i, i + CHUNK)).onConflictDoNothing();
                 }
             }
 
@@ -279,9 +280,10 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 }
             }
             if (pairs.length === 0) return;
+            const dedupedPairs = this.dedupePartFitmentPairs(pairs);
             const PAIR_CHUNK = 30_000;
-            for (let i = 0; i < pairs.length; i += PAIR_CHUNK) {
-                await tx.insert(partFitments).values(pairs.slice(i, i + PAIR_CHUNK)).onConflictDoNothing();
+            for (let i = 0; i < dedupedPairs.length; i += PAIR_CHUNK) {
+                await tx.insert(partFitments).values(dedupedPairs.slice(i, i + PAIR_CHUNK)).onConflictDoNothing();
             }
         });
     }
@@ -314,8 +316,11 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         return [valueToPartIds, valueToPartIdentifierId];
     }
 
-    // Phase 1b: bulk-fetch existing fitments for all (make, model, year) combos in the batch
-    private async getFitmentMappings(records: VendorRecord[]): Promise<Map<string, string>> {
+    // Bulk-fetch existing fitments for all (make, model, year) combos in the batch (inside write tx).
+    private async getFitmentMappings(
+        records: VendorRecord[],
+        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+    ): Promise<Map<string, string>> {
         const fitmentKeyToId = new Map<string, string>();
         const allFitments = records.flatMap(r => r.fitments);
         if (allFitments.length === 0) return fitmentKeyToId;
@@ -324,7 +329,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         const models = [...new Set(allFitments.map(f => f.model))];
         const years = [...new Set(allFitments.map(f => f.year))];
 
-        const existingFitments = await db
+        const existingFitments = await tx
             .select({ id: fitments.id, make: fitments.make, model: fitments.model, year: fitments.year, constraint: fitments.constraint, trim: fitments.trim, engine: fitments.engine })
             .from(fitments)
             .where(and(inArray(fitments.make, makes), inArray(fitments.model, models), inArray(fitments.year, years)));
@@ -343,12 +348,14 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         records: ResolvedRecord[],
         fitmentKeyToId: Map<string, string>,
     ): Promise<void> {
+        await this.dropStaleFitmentCacheEntries(tx, fitmentKeyToId);
+
         const seen = new Set<string>();
         const toInsert: Array<typeof fitments.$inferInsert> = [];
         for (const r of records) {
             for (const f of r.record.fitments) {
                 const key = this.fitmentKey(f);
-                if (fitmentKeyToId.has(key) || seen.has(key)) continue;
+                if (seen.has(key) || fitmentKeyToId.has(key)) continue;
                 seen.add(key);
                 toInsert.push({
                     make: f.make, model: f.model, year: f.year,
@@ -428,6 +435,36 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
     private fitmentKey(f: { make: string; model: string; year: number; constraint?: string | null; trim?: string | null; engine?: string | null }): string {
         return `${f.make}:${f.model}:${f.year}:${f.constraint ?? ''}:${f.trim ?? ''}:${f.engine ?? ''}`;
+    }
+
+    /** Remove prefetch map entries whose fitment rows no longer exist (avoids part_fitments FK violations). */
+    private async dropStaleFitmentCacheEntries(
+        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        fitmentKeyToId: Map<string, string>,
+    ): Promise<void> {
+        const cachedIds = [...new Set(fitmentKeyToId.values())];
+        if (cachedIds.length === 0) return;
+
+        const existing = await tx
+            .select({ id: fitments.id })
+            .from(fitments)
+            .where(inArray(fitments.id, cachedIds));
+        const live = new Set(existing.map(r => r.id));
+        for (const [key, id] of fitmentKeyToId) {
+            if (!live.has(id)) fitmentKeyToId.delete(key);
+        }
+    }
+
+    private dedupePartFitmentPairs(pairs: Array<{ partId: string; fitmentId: string }>): Array<{ partId: string; fitmentId: string }> {
+        const seen = new Set<string>();
+        const out: Array<{ partId: string; fitmentId: string }> = [];
+        for (const p of pairs) {
+            const key = `${p.partId}:${p.fitmentId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(p);
+        }
+        return out;
     }
 
     private async getOrCreateWarehouseLocation(

@@ -242,4 +242,20 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
     const pfZeroRes = await testDb.execute<{ cnt: string }>(`SELECT count(*)::text AS cnt FROM part_fitments`);
     expect(parseInt(pfZeroRes.rows[0]!.cnt, 10)).toBe(0);
   });
+
+  it('re-ingest after fitment row removed still links part_fitments (no stale prefetch ids)', async () => {
+    const processor = new DrizzleRecordProcessor();
+    const fitment = { make: 'Honda', model: 'Civic', year: 2018 };
+    const record = makeRecord({ fitments: [fitment] });
+    await processor.validateAndUpsert([record], 'ebay');
+
+    await testDb.execute(`DELETE FROM part_fitments`);
+    await testDb.execute(`DELETE FROM fitments`);
+
+    const result = await processor.validateAndUpsert([record], 'ebay');
+    expect(result.succeeded).toBe(1);
+
+    const pfRes = await testDb.execute<{ cnt: string }>(`SELECT count(*)::text AS cnt FROM part_fitments`);
+    expect(parseInt(pfRes.rows[0]!.cnt, 10)).toBe(1);
+  });
 });
