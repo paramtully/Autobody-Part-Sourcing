@@ -69,7 +69,7 @@ erDiagram
 |-------|---------|
 | `parts` | Canonical part (name + category) |
 | `part_identifiers` | OEM / aftermarket / interchange — normalized for lookup |
-| `fitments` + `part_fitments` | Vehicle fit |
+| `fitments` + `part_fitments` | Vehicle fit (make/model/year/...) |
 | `listings` | Vendor price, condition, stock, URL for a specific identifier |
 
 **Ingestion (`DrizzleRecordProcessor`):** normalize → **2 bulk reads** per 200-listing page → classify in memory (new / update / conflict) → **1 transaction** with batched fitments + `part_fitments` → optional fitment enrichment **only for new parts**.
