@@ -54,7 +54,7 @@ flowchart TB
 
 ## Data model & ingestion
 
-**Problem:** One physical part can have an OEM number, aftermarket SKU, and interchange ID — formatted differently per vendor (`1234-AB` vs `1234AB`). Shops should search once and see **all equivalent listings**.
+**Problem:** One physical part can have several OEM numbers, aftermarket SKUs, and interchange IDs — formatted differently per vendor (`1234-AB` vs `1234AB`). Shops should search once and see **all equivalent listings**.
 
 ```mermaid
 erDiagram
