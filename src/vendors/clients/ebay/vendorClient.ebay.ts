@@ -90,13 +90,14 @@ export default class eBayVendorClient implements VendorInventoryClient {
     // no longer corresponds to the same search scope.
     // The Browse API enforces a limit of 1 category per request, so we cycle through
     // categories sequentially, encoding position as "{categoryIndex}:{offset}" in the cursor.
-    private readonly TARGETED_CATEGORY_IDS = [
-        '33637',  // Bumpers & Reinforcements
-        '33714',  // Fenders / Panels
-        '33710',  // Headlight Assemblies
-        '33642',  // Side View Mirrors
-        '33556',  // Doors
-        '33567',  // Hoods
+    // Browse API requires `q` when category_ids is a top-level (L1) category — without it, error 12001.
+    private readonly TARGETED_CATEGORY_SEARCHES: ReadonlyArray<{ categoryId: string; q: string }> = [
+        { categoryId: '33637', q: 'bumper' },       // Bumpers & Reinforcements
+        { categoryId: '33714', q: 'fender' },       // Fenders / Panels
+        { categoryId: '33710', q: 'headlight' },    // Headlight Assemblies
+        { categoryId: '33642', q: 'mirror' },       // Side View Mirrors
+        { categoryId: '33556', q: 'door' },         // Doors
+        { categoryId: '33567', q: 'hood' },         // Hoods
     ];
     readonly config: eBayConfig;
 
@@ -237,13 +238,13 @@ export default class eBayVendorClient implements VendorInventoryClient {
 
         return {
             part: {
-                name: aspects['Part Name']?.[0] ?? (item.title ?? item.itemId).slice(0, 80),
+                name: (aspects['Part Name']?.[0] ?? item.title ?? item.itemId).slice(0, 255),
                 category,
                 position: mapEbayPosition(
                     category,
-                    aspects['Placement on Vehicle']?.[0]
-                        ?? aspects['Vehicle Part Location']?.[0]
-                        ?? item.title,
+                    [aspects['Placement on Vehicle']?.[0], aspects['Vehicle Part Location']?.[0], item.title]
+                        .map(v => v?.trim())
+                        .find(Boolean),
                 ),
                 description: stripHtml(item.shortDescription ?? item.description ?? '').slice(0, 500) || undefined,
                 weightGrams: parseItemWeightGrams(aspects['Item Weight']?.[0]),
@@ -327,15 +328,16 @@ export default class eBayVendorClient implements VendorInventoryClient {
         // Browse API allows at most 1 category_ids value per request.
         // We cycle through TARGETED_CATEGORY_IDS sequentially, encoding position in the cursor.
         const { catIdx, offset } = this.decodeCursor(cursor);
-        const categoryId = this.TARGETED_CATEGORY_IDS[catIdx];
-        if (!categoryId) {
+        const search = this.TARGETED_CATEGORY_SEARCHES[catIdx];
+        if (!search) {
             return { records: [], nextCursor: undefined, hasMore: false };
         }
 
         let res: Response;
         try {
             const params = new URLSearchParams({
-                category_ids: categoryId,
+                q: search.q,
+                category_ids: search.categoryId,
                 limit: String(this.pageSize),
                 offset: String(offset),
             });
@@ -362,7 +364,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
             .filter((r: { success: boolean }) => r.success)
             .map((r: { data: unknown }) => r.data as UnknownRawVendorRecord);
 
-        if (records.length === 0 && !body.next && catIdx >= this.TARGETED_CATEGORY_IDS.length - 1) {
+        if (records.length === 0 && !body.next && catIdx >= this.TARGETED_CATEGORY_SEARCHES.length - 1) {
             // Last category is also empty — nothing left to ingest.
             throw new VendorError('INVALID_REQUEST', 'No data found in eBay response', this.config.retryAfterMs, new Error('No data found in eBay response'));
         }
@@ -381,7 +383,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
         } else {
             // Current category exhausted — advance to next category if one exists.
             const nextCatIdx = catIdx + 1;
-            if (nextCatIdx < this.TARGETED_CATEGORY_IDS.length) {
+            if (nextCatIdx < this.TARGETED_CATEGORY_SEARCHES.length) {
                 nextCursor = `${nextCatIdx}:0`;
                 hasMore = true;
             } else {

@@ -21,7 +21,17 @@ export type Fitment = {
 }
 
 export function normalizeVendorRecord(record: VendorRecord): VendorRecord {
-    return { ...record, identifiers: record.identifiers.map(i => partIdentifierSchema.parse(i)) };
+    const position = record.part.position?.trim() || undefined;
+    const { position: _drop, ...partRest } = record.part;
+    return {
+        ...record,
+        part: {
+            ...partRest,
+            name: record.part.name.slice(0, 255),
+            ...(position ? { position } : {}),
+        },
+        identifiers: record.identifiers.map(i => partIdentifierSchema.parse(i)),
+    };
 }
 
 export interface VendorRecord {

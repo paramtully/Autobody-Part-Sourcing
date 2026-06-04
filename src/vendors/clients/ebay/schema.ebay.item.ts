@@ -312,8 +312,9 @@ export function mapEbayItemAvailability(estimatedAvailableQuantity?: number | nu
  *  Returns undefined only when placement is truly ambiguous (pair listing: both left+right
  *  or both front+rear). Single-side values like "Rear, Left" parse correctly. */
 export function mapEbayPosition(category: string, placement?: string): string | undefined {
-    if (!placement) return undefined;
-    const p = placement.toLowerCase();
+    const trimmed = placement?.trim();
+    if (!trimmed) return undefined;
+    const p = trimmed.toLowerCase();
     const isLeft  = /\b(left|driver|lh|l\/h|d\/?s)\b/.test(p);
     const isRight = /\b(right|passenger|rh|r\/h|p\/?s)\b/.test(p);
     const isFront = /\bfront\b/.test(p);

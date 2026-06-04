@@ -146,6 +146,23 @@ describe('mapRecord', () => {
     expect(record.part.position).toBeUndefined();
   });
 
+  it('blank Vehicle Part Location does not block title-based placement', () => {
+    const client = makeClient();
+    const item = {
+      ...validItem,
+      title: '2018 Honda Civic Left Headlight Assembly',
+      localizedAspects: [
+        { name: 'Part Name', value: 'Headlight' },
+        { name: 'Type', value: 'Headlight' },
+        { name: 'Vehicle Part Location', value: '' },
+      ],
+      categoryPath: 'eBay Motors|Parts & Accessories|Lighting & Lamps|Headlights',
+      primaryCategory: { categoryId: '33710', categoryName: 'Headlight Assemblies' },
+    };
+    const record = client.mapRecord(item);
+    expect(record.part.position).toBe('HEADLIGHT_LEFT');
+  });
+
   it('validation failure — throws VendorError(VALIDATION_ERROR) for invalid raw record', () => {
     const client = makeClient();
     let caught: unknown;
@@ -302,7 +319,7 @@ describe('mapRecord', () => {
 describe('fetchInventoryPage', () => {
   it('normal — returns records, hasMore: true, nextCursor from first page', async () => {
     // auth + search (has next) + 2 item detail calls
-    authThenSearch([validItem, validItem]);
+    const spy = authThenSearch([validItem, validItem]);
     const client = makeClient();
     const result = await client.fetchInventoryPage();
 
@@ -310,6 +327,19 @@ describe('fetchInventoryPage', () => {
     expect(result.records.length).toBe(2);
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBe('0:200');
+    const searchUrl = String(spy.mock.calls[1]![0]);
+    expect(searchUrl).toContain('q=bumper');
+    expect(searchUrl).toContain('category_ids=33637');
+  });
+
+  it('category index 1 — search includes q (required for L1 categories)', async () => {
+    const spy = authThenSearch([validItem, validItem]);
+    const client = makeClient();
+    await client.fetchInventoryPage('1:0');
+    const searchUrl = String(spy.mock.calls[1]![0]);
+    expect(searchUrl).toContain('q=fender');
+    expect(searchUrl).toContain('category_ids=33714');
+    expect(searchUrl).toContain('offset=0');
   });
 
   it('last page — hasMore: false when no next link on last category', async () => {

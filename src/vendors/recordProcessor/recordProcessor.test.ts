@@ -243,6 +243,37 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
     expect(parseInt(pfZeroRes.rows[0]!.cnt, 10)).toBe(0);
   });
 
+  it('sunroof weatherstrip listing (ebay-us cursor 0:1600 shape) upserts cleanly', async () => {
+    const processor = new DrizzleRecordProcessor();
+    const name = 'For 06-13 Toyota Lexus IS F Sunroof Sliding Weatherstrip Seal Rubber 63251-53030';
+    const result = await processor.validateAndUpsert([makeRecord({
+      part: {
+        name,
+        category: 'MOLDING',
+        description: 'Sunroof Weatherstrip Sliding Seal Fits LEXUS IS350. Placement on Vehicle: Upper. Packaging Weight: 240 g',
+        weightGrams: 240,
+      },
+      identifiers: [{ type: 'OEM', value: '6325153030' }],
+      fitments: [],
+      listing: { ...makeRecord().listing, vendorListingExternalId: 'sunroof-ws-1' },
+    })], 'ebay');
+    expect(result).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
+  });
+
+  it('empty-string position is stored as null, not invalid enum', async () => {
+    const processor = new DrizzleRecordProcessor();
+    const result = await processor.validateAndUpsert([makeRecord({
+      part: { name: 'Test Part', category: 'MOLDING', position: '' },
+      identifiers: [{ type: 'AFTERMARKET', value: 'MPN-EMPTY-POS' }],
+      listing: { ...makeRecord().listing, vendorListingExternalId: 'empty-pos-1' },
+    })], 'ebay');
+    expect(result).toMatchObject({ succeeded: 1, failed: 0 });
+    const row = await testDb.execute<{ position: string | null }>(
+      `SELECT position::text AS position FROM parts WHERE name = 'Test Part'`,
+    );
+    expect(row.rows[0]?.position).toBeNull();
+  });
+
   it('re-ingest after fitment row removed still links part_fitments (no stale prefetch ids)', async () => {
     const processor = new DrizzleRecordProcessor();
     const fitment = { make: 'Honda', model: 'Civic', year: 2018 };

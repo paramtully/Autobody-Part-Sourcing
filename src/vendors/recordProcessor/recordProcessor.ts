@@ -67,9 +67,9 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 const [newPart] = await tx
                     .insert(parts)
                     .values({
-                        name: rep.name,
+                        name: rep.name.slice(0, 255),
                         category: rep.category as typeof parts.$inferInsert['category'],
-                        position: (rep.position ?? null) as typeof parts.$inferInsert['position'],
+                        position: (rep.position?.trim() || null) as typeof parts.$inferInsert['position'],
                         description: rep.description ?? null,
                         weightGrams: rep.weightGrams ?? null,
                     })
@@ -113,11 +113,12 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
             for (const r of existingRecords) {
                 const partId = [...r.partIds][0];
                 const p = r.record.part;
-                if (p.description || p.weightGrams || p.position) {
+                const position = p.position?.trim() || undefined;
+                if (p.description || p.weightGrams || position) {
                     await tx.update(parts).set({
                         ...(p.description && { description: p.description }),
                         ...(p.weightGrams  && { weightGrams: p.weightGrams }),
-                        ...(p.position     && { position: p.position as typeof parts.$inferInsert['position'] }),
+                        ...(position      && { position: position as typeof parts.$inferInsert['position'] }),
                     }).where(eq(parts.id, partId));
                 }
 
