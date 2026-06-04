@@ -67,6 +67,7 @@ test/fixtures/ebay/live/
 **/*.cursor
 **/graphify-out
 **/docs/
+PRODUCTION_RELIABILITY_ANALYSIS.md
 
 # Terraform
 **/.terraform/
