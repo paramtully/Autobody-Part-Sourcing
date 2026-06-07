@@ -18,6 +18,21 @@ interface ResolvedRecord {
     confidence?: number;
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const DEFAULT_TX_CHUNK = 40;
+const DEFAULT_ENRICHMENT_CHUNK = 10;
+
+function txChunkSize(): number {
+    const n = Number(process.env['INGEST_TX_CHUNK_SIZE'] ?? DEFAULT_TX_CHUNK);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_TX_CHUNK;
+}
+
+function enrichmentChunkSize(): number {
+    const n = Number(process.env['INGEST_ENRICHMENT_CHUNK_SIZE'] ?? DEFAULT_ENRICHMENT_CHUNK);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_ENRICHMENT_CHUNK;
+}
+
 // validates records and upserts safe records to db
 export interface RecordProcessor {
     validateAndUpsert(records: VendorRecord[], vendorId: string): Promise<BatchResult>;
@@ -30,208 +45,59 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
     async validateAndUpsert(records: VendorRecord[], vendorId: string): Promise<BatchResult> {
         records = records.map(normalizeVendorRecord);
-        // Phase 1: bulk reads (fitment prefetch runs inside the write tx for a consistent snapshot)
-        const [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
+        if (records.length === 0) {
+            return { succeeded: 0, failed: 0, skipped: 0, newParts: [] };
+        }
 
-        // Phase 2: in-memory resolve → three separate arrays
-        const [newRecords, existingRecords, conflictRecords]: [ResolvedRecord[], ResolvedRecord[], ResolvedRecord[]] =
-            this.validateRecords(records, valueToPartIds, valueToPartIdentifierId);
+        let [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
 
-        // Phase 3: group new-part records by normalized category:name
-        const newPartGroups: Map<string, ResolvedRecord[]> = this.getNewPartGroups(newRecords);
+        // Pre-resolve all page fitments once — avoids repeating upserts in each write chunk.
+        const fitmentKeyToId = await this.preResolveFitments(records);
 
-        // Phase 4: single transaction
         let succeeded = 0;
         let failed = 0;
+        let skipped = 0;
         const newParts: BatchResult['newParts'] = [];
-
-        type ListingQueueItem = { partIdentifierId: string; record: VendorRecord; confidence: number };
-        const listingQueue: ListingQueueItem[] = [];
         const warehouseLocationCache = new Map<string, string>();
+        const chunkSize = txChunkSize();
 
-        await db.transaction(async (tx) => {
-            const fitmentKeyToId = await this.getFitmentMappings(records, tx);
+        for (let i = 0; i < records.length; i += chunkSize) {
+            const chunkRecords = records.slice(i, i + chunkSize);
+            const [newRecords, existingRecords, conflictRecords] =
+                this.validateRecords(chunkRecords, valueToPartIds, valueToPartIdentifierId);
+            skipped += conflictRecords.length;
 
-            // 4-pre: bulk-resolve all unique fitments across the batch in a single roundtrip.
-            // Without this, Trading API matrices (1k–2k fitments per record) cause tens of
-            // thousands of sequential INSERTs and stall the transaction for minutes.
-            await this.bulkResolveFitments(tx, [...newRecords, ...existingRecords], fitmentKeyToId);
+            const newPartGroups = this.getNewPartGroups(newRecords);
+            const writableCount = chunkRecords.length - conflictRecords.length;
+            if (writableCount === 0) continue;
 
-            // Accumulate all (partId, fitmentId) pairs for one batched partFitments insert at the end.
-            const partFitmentPairs: Array<{ partId: string; fitmentId: string }> = [];
-
-            // 4a: insert one part per new-part group, then fitments + identifiers
-            for (const [, group] of newPartGroups) {
-                const rep = group[0].record.part;
-
-                const [newPart] = await tx
-                    .insert(parts)
-                    .values({
-                        name: rep.name.slice(0, 255),
-                        category: rep.category as typeof parts.$inferInsert['category'],
-                        position: (rep.position?.trim() || null) as typeof parts.$inferInsert['position'],
-                        description: rep.description ?? null,
-                        weightGrams: rep.weightGrams ?? null,
-                    })
-                    .onConflictDoUpdate({ target: [parts.name, parts.category], set: { updatedAt: sql`now()` } })
-                    .returning({ id: parts.id });
-
-                // collect (partId, fitmentId) pairs; deduped per group via Set
-                const groupFitmentKeys = new Set<string>();
-                for (const r of group) {
-                    for (const f of r.record.fitments) {
-                        const key = this.fitmentKey(f);
-                        if (groupFitmentKeys.has(key)) continue;
-                        groupFitmentKeys.add(key);
-                        const fitmentId = fitmentKeyToId.get(key);
-                        if (fitmentId) partFitmentPairs.push({ partId: newPart.id, fitmentId });
-                    }
-                }
-
-                // insert identifiers per record; first returned id is the listing's partIdentifierId
-                for (const r of group) {
-                    const insertedPIs = await tx
-                        .insert(partIdentifiers)
-                        .values(r.record.identifiers.map(i => ({
-                            partId: newPart.id,
-                            type: i.type,
-                            value: i.value,
-                            manufacturer: i.manufacturer ?? null,
-                            certification: (i.certification ?? null) as typeof partIdentifiers.$inferInsert['certification'],
-                        })))
-                        .onConflictDoNothing()
-                        .returning({ id: partIdentifiers.id });
-
-                    const piId = insertedPIs[0]?.id;
-                    if (!piId) { failed++; continue; }
-                    listingQueue.push({ partIdentifierId: piId, record: r.record, confidence: r.confidence ?? 0.5 });
-                    newParts.push({ partId: newPart.id, vendorListingExternalId: r.record.listing.vendorListingExternalId });
-                }
-            }
-
-            // 4b: existing parts — patch enriched fields and add any new identifiers/fitments not yet linked
-            for (const r of existingRecords) {
-                const partId = [...r.partIds][0];
-                const p = r.record.part;
-                const position = p.position?.trim() || undefined;
-                if (p.description || p.weightGrams || position) {
-                    await tx.update(parts).set({
-                        ...(p.description && { description: p.description }),
-                        ...(p.weightGrams  && { weightGrams: p.weightGrams }),
-                        ...(position      && { position: position as typeof parts.$inferInsert['position'] }),
-                    }).where(eq(parts.id, partId));
-                }
-
-                const newIdentifiers = r.record.identifiers.filter(i => !(valueToPartIds.get(i.value)?.has(partId)));
-                if (newIdentifiers.length > 0) {
-                    await tx
-                        .insert(partIdentifiers)
-                        .values(newIdentifiers.map(i => ({
-                            partId,
-                            type: i.type,
-                            value: i.value,
-                            manufacturer: i.manufacturer ?? null,
-                            certification: (i.certification ?? null) as typeof partIdentifiers.$inferInsert['certification'],
-                        })))
-                        .onConflictDoNothing();
-                }
-
-                for (const f of r.record.fitments) {
-                    const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
-                    if (fitmentId) partFitmentPairs.push({ partId, fitmentId });
-                }
-
-                listingQueue.push({ partIdentifierId: r.partIdentifierId, record: r.record, confidence: r.confidence ?? 0.9 });
-            }
-
-            // 4-mid: bulk-insert all part_fitments pairs in chunks (PG param limit ≈ 65k → 2 cols × 30k rows)
-            if (partFitmentPairs.length > 0) {
-                const dedupedPairs = this.dedupePartFitmentPairs(partFitmentPairs);
-                const CHUNK = 30_000;
-                for (let i = 0; i < dedupedPairs.length; i += CHUNK) {
-                    await tx.insert(partFitments).values(dedupedPairs.slice(i, i + CHUNK)).onConflictDoNothing();
-                }
-            }
-
-            // 4c: upsert listings, collect returned ids for image writes
-            const now = new Date();
-            type ImageRow = { url: string; listingId: string; imageType: string | null; sortOrder: number };
-            const imageQueue: ImageRow[] = [];
-
-            for (const { partIdentifierId, record, confidence } of listingQueue) {
-                if (!partIdentifierId) { failed++; continue; }
-                const l = record.listing;
-
-                const warehouseLocationId = l.warehouseLocation
-                    ? await this.getOrCreateWarehouseLocation(tx, l.warehouseLocation, warehouseLocationCache)
-                    : undefined;
-
-                const [row] = await tx
-                    .insert(listings)
-                    .values({
+            try {
+                const chunkResult = await db.transaction(async (tx) =>
+                    this.upsertChunk(tx, {
                         vendorId,
-                        partIdentifierId,
-                        vendorListingExternalId: l.vendorListingExternalId,
-                        sourceUrl: l.sourceUrl,
-                        condition: l.condition,
-                        description: l.description,
-                        quantityAvailable: l.quantityAvailable,
-                        availabilityStatus: l.availabilityStatus,
-                        priceMinorMin: l.priceMinorMin,
-                        priceMinorMax: l.priceMinorMax,
-                        currency: l.currency as typeof listings.$inferInsert['currency'],
-                        sourceVehicleVin: l.sourceVehicleVin,
-                        sourceMileage: l.sourceMileage,
-                        sourceDamageType: l.sourceDamageType,
-                        estimatedShipTimeHours: l.estimatedShipTimeHours,
-                        warehouseLocationId: warehouseLocationId ?? null,
-                        confidenceScore: confidence.toString(),
-                        source: 'VENDOR_API',
-                        rawPayload: record.rawPayload ?? null,
-                        lastSeenAt: now,
-                        lastVerifiedAt: now,
-                    })
-                    .onConflictDoUpdate({
-                        target: [listings.vendorId, listings.vendorListingExternalId],
-                        set: {
-                            partIdentifierId,
-                            description: l.description,
-                            availabilityStatus: l.availabilityStatus,
-                            priceMinorMin: l.priceMinorMin,
-                            priceMinorMax: l.priceMinorMax,
-                            quantityAvailable: l.quantityAvailable,
-                            estimatedShipTimeHours: l.estimatedShipTimeHours,
-                            warehouseLocationId: warehouseLocationId ?? null,
-                            sourceVehicleVin: l.sourceVehicleVin,
-                            sourceDamageType: l.sourceDamageType,
-                            confidenceScore: confidence.toString(),
-                            rawPayload: record.rawPayload ?? null,
-                            isActive: true,
-                            lastSeenAt: now,
-                            lastVerifiedAt: now,
-                            updatedAt: now,
-                        },
-                    })
-                    .returning({ listingId: listings.id });
-
-                if (l.images?.length) {
-                    imageQueue.push(...l.images.map((img, i) => ({
-                        url: img.url,
-                        listingId: row.listingId,
-                        imageType: img.type ?? null,
-                        sortOrder: i,
-                    })));
-                }
-                succeeded++;
+                        newPartGroups,
+                        existingRecords,
+                        valueToPartIds,
+                        fitmentKeyToId,
+                        warehouseLocationCache,
+                    }),
+                );
+                succeeded += chunkResult.succeeded;
+                failed += chunkResult.failed;
+                newParts.push(...chunkResult.newParts);
+            } catch (e: unknown) {
+                failed += writableCount;
+                console.error(
+                    `[recordProcessor] chunk ${Math.floor(i / chunkSize) + 1} failed (${writableCount} records):`,
+                    e instanceof Error ? e.message : e,
+                );
             }
 
-            // 4d: bulk insert images — onConflictDoNothing keyed on url PK
-            if (imageQueue.length > 0) {
-                await tx.insert(listingImages).values(imageQueue).onConflictDoNothing();
-            }
-        });
+            const [freshIds, freshPI] = await this.getExistingPartIdentifierMappings(chunkRecords);
+            this.mergeIdentifierMappings(valueToPartIds, valueToPartIdentifierId, freshIds, freshPI);
+        }
 
-        return { succeeded, failed, skipped: conflictRecords.length, newParts };
+        return { succeeded, failed, skipped, newParts };
     }
 
     /**
@@ -241,52 +107,274 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
     async appendFitmentsToParts(enrichments: Array<{ partId: string; fitments: Fitment[] }>): Promise<void> {
         if (enrichments.length === 0) return;
 
-        // Collect all unique fitments across enrichments.
-        const allFitments = enrichments.flatMap(e => e.fitments);
-        if (allFitments.length === 0) return;
+        const pseudoRecords: VendorRecord[] = enrichments.map(e => ({
+            part: { name: '_enrich', category: 'OTHER' },
+            identifiers: [{ type: 'INTERCHANGE', value: e.partId }],
+            fitments: e.fitments,
+            listing: {
+                vendorListingExternalId: e.partId,
+                condition: 'UNKNOWN',
+                availabilityStatus: 'UNKNOWN',
+                priceMinorMin: 0,
+                currency: 'USD',
+            },
+        }));
+
+        const fitmentKeyToId = await this.preResolveFitments(pseudoRecords);
+        const chunkSize = enrichmentChunkSize();
+
+        for (let i = 0; i < enrichments.length; i += chunkSize) {
+            const slice = enrichments.slice(i, i + chunkSize);
+            await db.transaction(async (tx) => {
+                const pairs: Array<{ partId: string; fitmentId: string }> = [];
+                for (const { partId, fitments: pFitments } of slice) {
+                    const seen = new Set<string>();
+                    for (const f of pFitments) {
+                        const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
+                        if (!fitmentId || seen.has(fitmentId)) continue;
+                        seen.add(fitmentId);
+                        pairs.push({ partId, fitmentId });
+                    }
+                }
+                if (pairs.length === 0) return;
+                const dedupedPairs = this.dedupePartFitmentPairs(pairs);
+                const PAIR_CHUNK = 30_000;
+                for (let j = 0; j < dedupedPairs.length; j += PAIR_CHUNK) {
+                    await tx.insert(partFitments).values(dedupedPairs.slice(j, j + PAIR_CHUNK)).onConflictDoNothing();
+                }
+            });
+        }
+    }
+
+    /** One short tx: prefetch + insert missing fitment rows for the whole page. */
+    private async preResolveFitments(records: VendorRecord[]): Promise<Map<string, string>> {
+        const fitmentKeyToId = new Map<string, string>();
+        const allFitments = records.flatMap(r => r.fitments);
+        if (allFitments.length === 0) return fitmentKeyToId;
+
+        const asResolved: ResolvedRecord[] = records.map(record => ({
+            record,
+            partIds: new Set<string>(),
+            partIdentifierId: '',
+            isValid: true,
+            isNew: true,
+        }));
 
         await db.transaction(async (tx) => {
-            // Resolve fitment IDs (insert missing rows, return IDs for all).
-            const fitmentKeyToId = new Map<string, string>();
-            const seen = new Set<string>();
-            const toInsert: Array<typeof fitments.$inferInsert> = [];
-            for (const f of allFitments) {
-                const key = this.fitmentKey(f);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                toInsert.push({ make: f.make, model: f.model, year: f.year, constraint: f.constraint ?? null, trim: f.trim ?? null, engine: f.engine ?? null });
-            }
-            const CHUNK = 5_000;
-            for (let i = 0; i < toInsert.length; i += CHUNK) {
-                const rows = await tx
-                    .insert(fitments)
-                    .values(toInsert.slice(i, i + CHUNK))
-                    .onConflictDoUpdate({
-                        target: [fitments.make, fitments.model, fitments.year, fitments.constraint, fitments.trim, fitments.engine],
-                        set: { make: sql`excluded.make` },
-                    })
-                    .returning({ id: fitments.id, make: fitments.make, model: fitments.model, year: fitments.year, constraint: fitments.constraint, trim: fitments.trim, engine: fitments.engine });
-                for (const row of rows) fitmentKeyToId.set(this.fitmentKey(row), row.id);
-            }
+            const prefetched = await this.getFitmentMappings(records, tx);
+            for (const [k, v] of prefetched) fitmentKeyToId.set(k, v);
+            await this.bulkResolveFitments(tx, asResolved, fitmentKeyToId);
+        });
 
-            // Build (partId, fitmentId) pairs and bulk insert.
-            const pairs: Array<{ partId: string; fitmentId: string }> = [];
-            for (const { partId, fitments: pFitments } of enrichments) {
-                const seen2 = new Set<string>();
-                for (const f of pFitments) {
-                    const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
-                    if (!fitmentId || seen2.has(fitmentId)) continue;
-                    seen2.add(fitmentId);
-                    pairs.push({ partId, fitmentId });
+        return fitmentKeyToId;
+    }
+
+    private async upsertChunk(
+        tx: Tx,
+        opts: {
+            vendorId: string;
+            newPartGroups: Map<string, ResolvedRecord[]>;
+            existingRecords: ResolvedRecord[];
+            valueToPartIds: Map<string, Set<string>>;
+            fitmentKeyToId: Map<string, string>;
+            warehouseLocationCache: Map<string, string>;
+        },
+    ): Promise<{ succeeded: number; failed: number; newParts: BatchResult['newParts'] }> {
+        const {
+            vendorId,
+            newPartGroups,
+            existingRecords,
+            valueToPartIds,
+            fitmentKeyToId,
+            warehouseLocationCache,
+        } = opts;
+
+        let succeeded = 0;
+        let failed = 0;
+        const newParts: BatchResult['newParts'] = [];
+        const partFitmentPairs: Array<{ partId: string; fitmentId: string }> = [];
+        type ListingQueueItem = { partIdentifierId: string; record: VendorRecord; confidence: number };
+        const listingQueue: ListingQueueItem[] = [];
+
+        for (const [, group] of newPartGroups) {
+            const rep = group[0].record.part;
+
+            const [newPart] = await tx
+                .insert(parts)
+                .values({
+                    name: rep.name.slice(0, 255),
+                    category: rep.category as typeof parts.$inferInsert['category'],
+                    position: (rep.position?.trim() || null) as typeof parts.$inferInsert['position'],
+                    description: rep.description ?? null,
+                    weightGrams: rep.weightGrams ?? null,
+                })
+                .onConflictDoUpdate({ target: [parts.name, parts.category], set: { updatedAt: sql`now()` } })
+                .returning({ id: parts.id });
+
+            const groupFitmentKeys = new Set<string>();
+            for (const r of group) {
+                for (const f of r.record.fitments) {
+                    const key = this.fitmentKey(f);
+                    if (groupFitmentKeys.has(key)) continue;
+                    groupFitmentKeys.add(key);
+                    const fitmentId = fitmentKeyToId.get(key);
+                    if (fitmentId) partFitmentPairs.push({ partId: newPart.id, fitmentId });
                 }
             }
-            if (pairs.length === 0) return;
-            const dedupedPairs = this.dedupePartFitmentPairs(pairs);
+
+            for (const r of group) {
+                const insertedPIs = await tx
+                    .insert(partIdentifiers)
+                    .values(r.record.identifiers.map(i => ({
+                        partId: newPart.id,
+                        type: i.type,
+                        value: i.value,
+                        manufacturer: i.manufacturer ?? null,
+                        certification: (i.certification ?? null) as typeof partIdentifiers.$inferInsert['certification'],
+                    })))
+                    .onConflictDoNothing()
+                    .returning({ id: partIdentifiers.id });
+
+                const piId = insertedPIs[0]?.id;
+                if (!piId) { failed++; continue; }
+                listingQueue.push({ partIdentifierId: piId, record: r.record, confidence: r.confidence ?? 0.5 });
+                newParts.push({ partId: newPart.id, vendorListingExternalId: r.record.listing.vendorListingExternalId });
+            }
+        }
+
+        for (const r of existingRecords) {
+            const partId = [...r.partIds][0];
+            const p = r.record.part;
+            const position = p.position?.trim() || undefined;
+            if (p.description || p.weightGrams || position) {
+                await tx.update(parts).set({
+                    ...(p.description && { description: p.description }),
+                    ...(p.weightGrams  && { weightGrams: p.weightGrams }),
+                    ...(position      && { position: position as typeof parts.$inferInsert['position'] }),
+                }).where(eq(parts.id, partId));
+            }
+
+            const newIdentifiers = r.record.identifiers.filter(i => !(valueToPartIds.get(i.value)?.has(partId)));
+            if (newIdentifiers.length > 0) {
+                await tx
+                    .insert(partIdentifiers)
+                    .values(newIdentifiers.map(i => ({
+                        partId,
+                        type: i.type,
+                        value: i.value,
+                        manufacturer: i.manufacturer ?? null,
+                        certification: (i.certification ?? null) as typeof partIdentifiers.$inferInsert['certification'],
+                    })))
+                    .onConflictDoNothing();
+            }
+
+            for (const f of r.record.fitments) {
+                const fitmentId = fitmentKeyToId.get(this.fitmentKey(f));
+                if (fitmentId) partFitmentPairs.push({ partId, fitmentId });
+            }
+
+            listingQueue.push({ partIdentifierId: r.partIdentifierId, record: r.record, confidence: r.confidence ?? 0.9 });
+        }
+
+        if (partFitmentPairs.length > 0) {
+            const dedupedPairs = this.dedupePartFitmentPairs(partFitmentPairs);
             const PAIR_CHUNK = 30_000;
             for (let i = 0; i < dedupedPairs.length; i += PAIR_CHUNK) {
                 await tx.insert(partFitments).values(dedupedPairs.slice(i, i + PAIR_CHUNK)).onConflictDoNothing();
             }
-        });
+        }
+
+        const now = new Date();
+        type ImageRow = { url: string; listingId: string; imageType: string | null; sortOrder: number };
+        const imageQueue: ImageRow[] = [];
+
+        for (const { partIdentifierId, record, confidence } of listingQueue) {
+            if (!partIdentifierId) { failed++; continue; }
+            const l = record.listing;
+
+            const warehouseLocationId = l.warehouseLocation
+                ? await this.getOrCreateWarehouseLocation(tx, l.warehouseLocation, warehouseLocationCache)
+                : undefined;
+
+            const [row] = await tx
+                .insert(listings)
+                .values({
+                    vendorId,
+                    partIdentifierId,
+                    vendorListingExternalId: l.vendorListingExternalId,
+                    sourceUrl: l.sourceUrl,
+                    condition: l.condition,
+                    description: l.description,
+                    quantityAvailable: l.quantityAvailable,
+                    availabilityStatus: l.availabilityStatus,
+                    priceMinorMin: l.priceMinorMin,
+                    priceMinorMax: l.priceMinorMax,
+                    currency: l.currency as typeof listings.$inferInsert['currency'],
+                    sourceVehicleVin: l.sourceVehicleVin,
+                    sourceMileage: l.sourceMileage,
+                    sourceDamageType: l.sourceDamageType,
+                    estimatedShipTimeHours: l.estimatedShipTimeHours,
+                    warehouseLocationId: warehouseLocationId ?? null,
+                    confidenceScore: confidence.toString(),
+                    source: 'VENDOR_API',
+                    rawPayload: record.rawPayload ?? null,
+                    lastSeenAt: now,
+                    lastVerifiedAt: now,
+                })
+                .onConflictDoUpdate({
+                    target: [listings.vendorId, listings.vendorListingExternalId],
+                    set: {
+                        partIdentifierId,
+                        description: l.description,
+                        availabilityStatus: l.availabilityStatus,
+                        priceMinorMin: l.priceMinorMin,
+                        priceMinorMax: l.priceMinorMax,
+                        quantityAvailable: l.quantityAvailable,
+                        estimatedShipTimeHours: l.estimatedShipTimeHours,
+                        warehouseLocationId: warehouseLocationId ?? null,
+                        sourceVehicleVin: l.sourceVehicleVin,
+                        sourceDamageType: l.sourceDamageType,
+                        confidenceScore: confidence.toString(),
+                        rawPayload: record.rawPayload ?? null,
+                        isActive: true,
+                        lastSeenAt: now,
+                        lastVerifiedAt: now,
+                        updatedAt: now,
+                    },
+                })
+                .returning({ listingId: listings.id });
+
+            if (l.images?.length) {
+                imageQueue.push(...l.images.map((img, idx) => ({
+                    url: img.url,
+                    listingId: row.listingId,
+                    imageType: img.type ?? null,
+                    sortOrder: idx,
+                })));
+            }
+            succeeded++;
+        }
+
+        if (imageQueue.length > 0) {
+            await tx.insert(listingImages).values(imageQueue).onConflictDoNothing();
+        }
+
+        return { succeeded, failed, newParts };
+    }
+
+    private mergeIdentifierMappings(
+        valueToPartIds: Map<string, Set<string>>,
+        valueToPartIdentifierId: Map<string, string>,
+        freshIds: Map<string, Set<string>>,
+        freshPI: Map<string, string>,
+    ): void {
+        for (const [value, partIds] of freshIds) {
+            if (!valueToPartIds.has(value)) valueToPartIds.set(value, new Set());
+            for (const id of partIds) valueToPartIds.get(value)!.add(id);
+        }
+        for (const [value, piId] of freshPI) {
+            if (!valueToPartIdentifierId.has(value)) valueToPartIdentifierId.set(value, piId);
+        }
     }
 
     // Phase 1a: bulk-fetch existing partIdentifiers for all identifier values in the batch
@@ -320,7 +408,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
     // Bulk-fetch existing fitments for all (make, model, year) combos in the batch (inside write tx).
     private async getFitmentMappings(
         records: VendorRecord[],
-        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        tx: Tx,
     ): Promise<Map<string, string>> {
         const fitmentKeyToId = new Map<string, string>();
         const allFitments = records.flatMap(r => r.fitments);
@@ -345,7 +433,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
     // populating their IDs back into the map. Uses onConflictDoUpdate with a no-op SET
     // so RETURNING gives us IDs for both inserted and pre-existing rows in a single call.
     private async bulkResolveFitments(
-        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        tx: Tx,
         records: ResolvedRecord[],
         fitmentKeyToId: Map<string, string>,
     ): Promise<void> {
@@ -366,7 +454,6 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
         }
         if (toInsert.length === 0) return;
 
-        // PG max parameters per query is 65535; 6 cols × ~10k rows is safe.
         const CHUNK = 5_000;
         for (let i = 0; i < toInsert.length; i += CHUNK) {
             const slice = toInsert.slice(i, i + CHUNK);
@@ -375,7 +462,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
                 .values(slice)
                 .onConflictDoUpdate({
                     target: [fitments.make, fitments.model, fitments.year, fitments.constraint, fitments.trim, fitments.engine],
-                    set: { make: sql`excluded.make` },                            // no-op SET so RETURNING fires for conflicts too
+                    set: { make: sql`excluded.make` },
                 })
                 .returning({ id: fitments.id, make: fitments.make, model: fitments.model, year: fitments.year, constraint: fitments.constraint, trim: fitments.trim, engine: fitments.engine });
             for (const row of rows) fitmentKeyToId.set(this.fitmentKey(row), row.id);
@@ -440,7 +527,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
 
     /** Remove prefetch map entries whose fitment rows no longer exist (avoids part_fitments FK violations). */
     private async dropStaleFitmentCacheEntries(
-        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        tx: Tx,
         fitmentKeyToId: Map<string, string>,
     ): Promise<void> {
         const cachedIds = [...new Set(fitmentKeyToId.values())];
@@ -469,7 +556,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
     }
 
     private async getOrCreateWarehouseLocation(
-        tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+        tx: Tx,
         loc: NonNullable<VendorRecord['listing']['warehouseLocation']>,
         cache: Map<string, string>,
     ): Promise<string> {

@@ -13,6 +13,20 @@ const CLIENTS: Record<string, VendorInventoryClient> = Object.fromEntries(
     ALL_CLIENTS.map(c => [c.vendorId, c]),
 );
 
+/** Retryable vendor/network errors — pause and resume, do not mark FAILED. */
+function isTransientIngestError(e: unknown): boolean {
+    if (e instanceof VendorError && e.isRetryable) return true;
+    const msg = e instanceof Error ? e.message : String(e);
+    return /aborted due to timeout|ECONNRESET|ETIMEDOUT|socket hang up|Failed query/i.test(msg);
+}
+
+/** FAILED runs with a cursor that failed on transient errors should auto-resume. */
+function isResumableFailedRun(errorMessage: string | null | undefined): boolean {
+    const msg = errorMessage ?? '';
+    if (/authenticate|AUTH_ERROR|VALIDATION_ERROR|not found in vendors/i.test(msg)) return false;
+    return msg.length === 0 || isTransientIngestError(new Error(msg));
+}
+
 export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: () => number }): Promise<void> {
     // vendor is set through the VENDOR_ID env var
     const vendorId = process.env['VENDOR_ID'];
@@ -47,6 +61,10 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
             await repo.update(last.id, { status: 'IN_PROGRESS' });
             run = { ...last, status: 'IN_PROGRESS' as const };
             console.log(`[ingest] resuming rate-limited run ${run.id} for vendor '${vendorId}' from cursor ${run.lastCursor ?? 'start'}`);
+        } else if (last?.status === 'FAILED' && last.lastCursor && isResumableFailedRun(last.errorMessage)) {
+            await repo.update(last.id, { status: 'IN_PROGRESS', errorMessage: null });
+            run = { ...last, status: 'IN_PROGRESS' as const };
+            console.log(`[ingest] resuming failed run ${run.id} for vendor '${vendorId}' from cursor ${run.lastCursor}`);
         } else if (last?.completedAt && Date.now() - last.completedAt.getTime() < intervalMs) {
             const cooldownRemainMin = Math.ceil((intervalMs - (Date.now() - last.completedAt.getTime())) / 60_000);
             console.log(`[ingest] skipping — last run completed at ${last.completedAt.toISOString()}, cooldown has ${cooldownRemainMin}m left (set INGEST_INTERVAL_MS=0 to disable)`);
@@ -101,8 +119,19 @@ export async function handler(_evt: unknown, ctx?: { getRemainingTimeInMillis?: 
             console.log(`[ingest] rate limited — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume after RATE_LIMIT_PAUSE_MS`);
             return;
         }
+        if (isTransientIngestError(e)) {
+            await repo.update(run.id, {
+                lastCursor: cursor ?? null,
+                lastChunkAt: new Date(),
+                stats,
+            });
+            const label = e instanceof VendorError ? e.type : 'TRANSIENT';
+            console.log(`[ingest] ${label} — run ${run.id} paused at cursor=${cursor ?? 'start'}, will resume next invocation`);
+            return;
+        }
         await repo.update(run.id, {
             status: 'FAILED',
+            lastCursor: cursor ?? null,
             errorMessage: e instanceof Error ? e.message : String(e),
             stats,
         });

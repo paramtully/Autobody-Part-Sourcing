@@ -12,6 +12,10 @@ import { Buffer } from 'buffer';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
+const SEARCH_TIMEOUT_MS = Number(process.env['EBAY_SEARCH_TIMEOUT_MS'] ?? 60_000);
+const DETAIL_TIMEOUT_MS = Number(process.env['EBAY_DETAIL_TIMEOUT_MS'] ?? 30_000);
+const AUTH_TIMEOUT_MS = Number(process.env['EBAY_AUTH_TIMEOUT_MS'] ?? 15_000);
+
 const AUTOMAKER_BRANDS = new Set([
     'Honda', 'Toyota', 'Ford', 'GM', 'Chevrolet', 'GMC', 'Nissan', 'Mazda', 'Subaru',
     'Hyundai', 'Kia', 'BMW', 'Mercedes-Benz', 'Audi', 'Volkswagen', 'Volvo', 'Acura',

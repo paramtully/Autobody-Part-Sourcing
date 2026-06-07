@@ -210,6 +210,26 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
     expect(parseInt(piRes2.rows[0]!.cnt, 10)).toBe(2);
   });
 
+  it('chunked writes (INGEST_TX_CHUNK_SIZE=2) — 5 records succeed across multiple txs', async () => {
+    const prev = process.env['INGEST_TX_CHUNK_SIZE'];
+    process.env['INGEST_TX_CHUNK_SIZE'] = '2';
+    try {
+      const processor = new DrizzleRecordProcessor();
+      const records = Array.from({ length: 5 }, (_, i) =>
+        makeRecord({
+          part: { name: `Chunked Part ${i}`, category: 'BUMPER' },
+          identifiers: [{ type: 'AFTERMARKET', value: `CHUNK-MPN-${i}` }],
+          listing: { ...makeRecord().listing, vendorListingExternalId: `CHUNK-${i}` },
+        }),
+      );
+      const result = await processor.validateAndUpsert(records, 'ebay');
+      expect(result).toMatchObject({ succeeded: 5, failed: 0, skipped: 0 });
+    } finally {
+      if (prev === undefined) delete process.env['INGEST_TX_CHUNK_SIZE'];
+      else process.env['INGEST_TX_CHUNK_SIZE'] = prev;
+    }
+  });
+
   it('fitment dedup across batch — 5 records with same fitment yield 1 fitments row', async () => {
     const processor = new DrizzleRecordProcessor();
     // Each record needs a DISTINCT part (different name/category) so the processor
@@ -256,6 +276,27 @@ describe('DrizzleRecordProcessor.validateAndUpsert', () => {
       identifiers: [{ type: 'OEM', value: '6325153030' }],
       fitments: [],
       listing: { ...makeRecord().listing, vendorListingExternalId: 'sunroof-ws-1' },
+    })], 'ebay');
+    expect(result).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
+  });
+
+  it('ebay-ca bumper bracket listing (cursor 0:600 shape) upserts cleanly', async () => {
+    const processor = new DrizzleRecordProcessor();
+    const desc =
+      'Specification Type: Bumper Bracket Fitment Type: Direct Replacement Placement on Vehicle: Left and Right ' +
+      'Quantity: Set of 2 OE/OEM Number: 23108154 ,23108155 Color: Black Package Dimensions((LengthxWidthxHeight：CM)）: 34*28.5*9 ' +
+      'Package Weight(KG): 2.85 Features & Benefits 1. **Structural Support and Strength**: The bumper beam provides essential ' +
+      "structural support to the vehicle's, enhancing overall rigidity and stability. It is designed to absorb and distribute " +
+      'impact energy during collisions, p,';
+    const result = await processor.validateAndUpsert([makeRecord({
+      part: {
+        name: 'Pair Rear Bumper Mounting Bracket For 2014-2018 Chevy Silverado 1500',
+        category: 'BUMPER_BRACKET',
+        description: desc.slice(0, 500),
+      },
+      identifiers: [{ type: 'OEM', value: '23108154' }, { type: 'OEM', value: '23108155' }],
+      fitments: [{ make: 'Chevrolet', model: 'Silverado 1500', year: 2015 }],
+      listing: { ...makeRecord().listing, vendorListingExternalId: 'bracket-ca-1', currency: 'CAD' },
     })], 'ebay');
     expect(result).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
   });

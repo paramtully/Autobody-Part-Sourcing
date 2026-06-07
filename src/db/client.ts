@@ -11,9 +11,13 @@ function createDb(): DrizzleDb {
     if (!connectionString) {
         throw new Error('DATABASE_URL environment variable is required');
     }
-    const sql = process.env.VERCEL
-        ? postgres(connectionString, { max: 1, idle_timeout: 20, connect_timeout: 10 })
-        : postgres(connectionString);
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    // Supavisor transaction pooler (:6543) rejects prepared statements and long interactive txs.
+    const isTxPooler = connectionString.includes(':6543');
+    const sql = postgres(connectionString, {
+        ...(isServerless ? { max: 1, idle_timeout: 20, connect_timeout: 10 } : {}),
+        ...(isTxPooler ? { prepare: false } : {}),
+    });
     return drizzle(sql, { schema });
 }
 

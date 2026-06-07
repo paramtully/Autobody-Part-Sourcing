@@ -57,7 +57,7 @@ export class IngestionRunRepo {
       lastChunkAt?: Date;
       completedAt?: Date;
       stats?: IngestionStats;
-      errorMessage?: string;
+      errorMessage?: string | null;
     },
   ): Promise<void> {
     await this.db
