@@ -352,7 +352,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                     'Authorization': `Bearer ${this.config.token}`,
                     'X-EBAY-C-MARKETPLACE-ID': this.config.marketplaceId,
                 },
-                signal: AbortSignal.timeout(30_000),
+                signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
             });
         } catch (error) {
             throw new VendorError('NETWORK_ERROR', `eBay network error: ${error instanceof Error ? error.message : String(error)}`, this.config.retryAfterMs, error);
@@ -485,7 +485,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                         Authorization: `Bearer ${this.config.token}`,
                         'X-EBAY-C-MARKETPLACE-ID': this.config.marketplaceId,
                     },
-                    signal: AbortSignal.timeout(30_000),
+                    signal: AbortSignal.timeout(DETAIL_TIMEOUT_MS),
                 },
             );
         } catch {
@@ -540,7 +540,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                     refresh_token: this.config.refreshToken,
                     scope: 'https://api.ebay.com/oauth/api_scope',
                 }),
-                signal: AbortSignal.timeout(15_000),
+                signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
             });
         } catch (error) {
             console.warn(`[ebay] user-token refresh network error: ${error instanceof Error ? error.message : String(error)}`);
@@ -585,7 +585,7 @@ export default class eBayVendorClient implements VendorInventoryClient {
                     grant_type: 'client_credentials',
                     scope: "https://api.ebay.com/oauth/api_scope",
                 }),
-                signal: AbortSignal.timeout(15_000),
+                signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
             });
         } catch (error) {
             this.config.inFlightToken = false;

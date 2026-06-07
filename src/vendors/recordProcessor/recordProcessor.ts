@@ -49,7 +49,7 @@ export default class DrizzleRecordProcessor implements RecordProcessor {
             return { succeeded: 0, failed: 0, skipped: 0, newParts: [] };
         }
 
-        let [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
+        const [valueToPartIds, valueToPartIdentifierId] = await this.getExistingPartIdentifierMappings(records);
 
         // Pre-resolve all page fitments once — avoids repeating upserts in each write chunk.
         const fitmentKeyToId = await this.preResolveFitments(records);
