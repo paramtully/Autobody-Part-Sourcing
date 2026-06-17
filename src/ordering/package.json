@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@repo/db": "*",
-    "stripe": "^22.0.2"
+    "stripe": "^22.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0"
