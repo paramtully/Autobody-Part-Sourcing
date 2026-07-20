@@ -32,7 +32,7 @@ const CONFIGS = {
     label: 'Likely fit',
     icon: ShieldAlert,
     className: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
-    popoverNote: 'Likely fit — verify with VIN before ordering.',
+    popoverNote: 'Likely fit. Verify with VIN before ordering.',
   },
   unknown: {
     label: 'Check fit',
@@ -70,7 +70,7 @@ export default function FitmentBadge({
         {config.label}
       </PopoverTrigger>
       <PopoverContent className="w-64 text-[12px] p-3" side="top">
-        <p className="font-medium mb-1">{partName ?? 'Part'} — {config.label}</p>
+        <p className="font-medium mb-1">{partName ?? 'Part'}: {config.label}</p>
         {fitmentSummary && <p className="text-[#475569] mb-1">{fitmentSummary}</p>}
         <p className="text-[#475569]">{config.popoverNote}</p>
       </PopoverContent>

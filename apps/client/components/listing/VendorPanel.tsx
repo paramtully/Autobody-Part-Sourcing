@@ -85,7 +85,7 @@ export default function VendorPanel({
       {/* Backorder note */}
       {availabilityStatus === 'BACKORDER' && (
         <p className="text-[12px] text-[#B91C1C] bg-red-50 border border-red-200 rounded-md px-3 py-2">
-          Backordered — vendor ETA may slip. Call to confirm.
+          Backordered. Vendor ETA may slip. Call to confirm.
         </p>
       )}
     </div>

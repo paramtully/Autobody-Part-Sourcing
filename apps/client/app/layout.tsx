@@ -6,9 +6,9 @@ import Topbar from '@/components/layout/Topbar';
 import Footer from '@/components/layout/Footer';
 
 export const metadata: Metadata = {
-  title: 'Boneyard — Collision Parts Sourcing',
+  title: 'Boneyard | Collision Parts Sourcing',
   description:
-    'Search OEM, aftermarket, and salvage parts from every connected vendor in one place. Purpose-built for collision repair shops.',
+    'Search OEM, aftermarket, and salvage parts from every connected vendor in one place. Built for collision repair shops.',
 };
 
 export default function RootLayout({

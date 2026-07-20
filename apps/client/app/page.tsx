@@ -21,8 +21,8 @@ export default function LandingPage() {
                 <span className="text-[#60A5FA]">not phone calls.</span>
               </h1>
               <p className="text-[16px] text-gray-300 leading-relaxed mb-8 max-w-[460px]">
-                Paste a VIN to auto-fill year/make/model, search by part number, or browse by vehicle fitment — all vendors, one table.
-                OEM, aftermarket, and salvage — instantly compared.
+                Paste a VIN to auto-fill year/make/model, search by part number, or browse by vehicle fitment. All vendors, one table.
+                OEM, aftermarket, and salvage, compared instantly.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -116,7 +116,7 @@ export default function LandingPage() {
                 step: '2',
                 icon: GitCompare,
                 title: 'Compare vendors instantly',
-                desc: 'See every available listing side-by-side: price, availability, ETA, vendor reliability, and fitment confidence — all in one table.',
+                desc: 'See every available listing side by side: price, availability, ETA, vendor reliability, and fitment confidence, all in one table.',
               },
               {
                 step: '3',
@@ -177,11 +177,11 @@ export default function LandingPage() {
               <div className="space-y-3">
                 {[
                   'OEM and aftermarket search in a single query',
-                  'Vehicle fitment wizard — Year → Make → Model → Part type',
+                  'Vehicle fitment wizard: Year → Make → Model → Part type',
                   'Vendor reliability scores on every listing',
-                  'ETA and availability on every row — no separate lookup',
-                  'Side-by-side comparison for up to 4 listings',
-                  '"Copy as quote line" — paste directly into estimate emails',
+                  'ETA and availability on every row, no separate lookup',
+                  'Side by side comparison for up to 4 listings',
+                  '"Copy as quote line" to paste directly into estimate emails',
                   'Searchable by OEM, aftermarket, or interchange part number',
                 ].map(feature => (
                   <div key={feature} className="flex items-start gap-2.5">
@@ -200,7 +200,7 @@ export default function LandingPage() {
       <section className="bg-[#1F6FEB] py-14">
         <Container>
           <div className="text-center text-white">
-            <h2 className="text-[28px] font-bold mb-3">Try it now — no signup required</h2>
+            <h2 className="text-[28px] font-bold mb-3">Try it now. No signup required</h2>
             <p className="text-[15px] text-blue-100 mb-7 max-w-[440px] mx-auto">
               Search across every connected vendor in seconds. Start sourcing faster today.
             </p>

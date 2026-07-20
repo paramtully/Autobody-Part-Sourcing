@@ -33,7 +33,7 @@ export default function PartNumber({ value, className, showIcon = true }: PartNu
         copied ? 'text-green-600' : 'text-[#475569] hover:text-[#0B1220]',
         className,
       )}
-      aria-label={`Part number ${value} — click to copy`}
+      aria-label={`Part number ${value}, click to copy`}
     >
       <span className="tracking-wide">{value}</span>
       {showIcon && (

@@ -137,7 +137,7 @@ export default function ListingDetailPage({ params }: { params: Promise<Params> 
               </div>
               {listing.confidenceScore && parseFloat(String(listing.confidenceScore)) < 0.85 && (
                 <p className="text-[12px] text-[#B45309] bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
-                  Likely fit — verify with VIN before ordering.
+                  Likely fit. Verify with VIN before ordering.
                 </p>
               )}
             </div>

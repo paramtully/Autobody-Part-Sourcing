@@ -67,7 +67,7 @@ export default function ListingGallery({ images, partName }: ListingGalleryProps
 
         <Image
           src={active.url}
-          alt={`${partName} — image ${activeIdx + 1}`}
+          alt={`${partName}, image ${activeIdx + 1}`}
           fill
           className="object-contain pointer-events-none"
           sizes="(max-width: 768px) 100vw, 50vw"
@@ -153,7 +153,7 @@ export default function ListingGallery({ images, partName }: ListingGalleryProps
           >
             <Image
               src={active.url}
-              alt={`${partName} — large view`}
+              alt={`${partName}, large view`}
               fill
               className="object-contain"
               sizes="100vw"

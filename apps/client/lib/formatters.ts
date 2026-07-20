@@ -167,8 +167,8 @@ export function formatQuoteLine(params: {
   const etaStr = estimatedShipTimeHours != null
     ? formatEta(estimatedShipTimeHours, null)
     : null;
-  const parts = [`Part #${partNumber} — ${typeStr} ${partName}, ${price}`];
+  const parts = [`Part #${partNumber}: ${typeStr} ${partName}, ${price}`];
   if (etaStr) parts.push(`${etaStr} from ${vendorName}`);
   else parts.push(`from ${vendorName}`);
-  return parts.join(' — ');
+  return parts.join('. ');
 }
