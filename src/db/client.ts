@@ -15,7 +15,9 @@ function createDb(): DrizzleDb {
     // Supavisor transaction pooler (:6543) rejects prepared statements and long interactive txs.
     const isTxPooler = connectionString.includes(':6543');
     const sql = postgres(connectionString, {
-        ...(isServerless ? { max: 1, idle_timeout: 20, connect_timeout: 10 } : {}),
+        // Keep connect_timeout at the postgres.js default (30s). A shorter budget (e.g. 10s)
+        // causes write CONNECT_TIMEOUT against Supavisor when the pool is cold or contended.
+        ...(isServerless ? { max: 1, idle_timeout: 20, connect_timeout: 30 } : {}),
         ...(isTxPooler ? { prepare: false } : {}),
     });
     return drizzle(sql, { schema });

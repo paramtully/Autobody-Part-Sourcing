@@ -117,4 +117,37 @@ describe('listingWorker handler — vendor rate limit', () => {
             }),
         );
     });
+
+    it('CONNECT_TIMEOUT before run starts — returns without failing invoke', async () => {
+        const err = Object.assign(
+            new Error('write CONNECT_TIMEOUT aws-1-us-west-2.pooler.supabase.com:6543'),
+            { code: 'CONNECT_TIMEOUT' },
+        );
+        mocks.findById.mockRejectedValue(err);
+
+        await expect(handler({}, lambdaCtx)).resolves.toBeUndefined();
+        expect(mocks.processPage).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it('CONNECT_TIMEOUT mid-run — pauses without marking FAILED', async () => {
+        const err = Object.assign(
+            new Error('write CONNECT_TIMEOUT aws-1-us-west-2.pooler.supabase.com:6543'),
+            { code: 'CONNECT_TIMEOUT' },
+        );
+        mocks.processPage.mockRejectedValue(err);
+
+        await expect(handler({}, lambdaCtx)).resolves.toBeUndefined();
+        expect(mocks.update).toHaveBeenCalledWith(
+            RUN_ID,
+            expect.objectContaining({
+                lastCursor: null,
+                lastChunkAt: expect.any(Date),
+            }),
+        );
+        expect(mocks.update).not.toHaveBeenCalledWith(
+            RUN_ID,
+            expect.objectContaining({ status: 'FAILED' }),
+        );
+    });
 });
